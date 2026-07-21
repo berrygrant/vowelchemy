@@ -12,7 +12,7 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
   const [outputDir, setOutputDir] = useState('')
   const [downloadModels, setDownloadModels] = useState(false)
   const [refreshed, setRefreshed] = useState(false)
-  const { job, error, start, running } = useJob()
+  const { job, error, start, running } = useJob('vowelchemy-job-align')
 
   useEffect(() => {
     if (job?.status === 'done' && !refreshed) {

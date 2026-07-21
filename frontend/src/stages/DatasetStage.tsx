@@ -20,6 +20,9 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
   const [selectedVowels, setSelectedVowels] = useState<string[]>([])
   const [filterCols, setFilterCols] = useState<string[]>([])
   const [filterValues, setFilterValues] = useState<Record<string, string[]>>({})
+  const [removeOutliers, setRemoveOutliers] = useState(false)
+  const [outlierSd, setOutlierSd] = useState(2.5)
+  const [normParams, setNormParams] = useState<{ g_value?: number; corner_high?: string; corner_low?: string }>({})
   const [table, setTable] = useState<TablePayload | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -59,6 +62,8 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
         const res = (await api.post('/api/dataset', {
           selected_vowels: vowelsSel,
           filters,
+          remove_outliers: removeOutliers,
+          outlier_sd: outlierSd,
         })) as TablePayload
         setTable(res)
       } catch (e) {
@@ -67,7 +72,7 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
         setBusy(false)
       }
     },
-    [selectedVowels, filterCols, filterValues, grouping],
+    [selectedVowels, filterCols, filterValues, grouping, removeOutliers, outlierSd],
   )
 
   // Auto-preview once options are available.
@@ -92,11 +97,12 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
     }
   }
 
-  const changeNorm = async (method: string) => {
+  const applyNorm = async (method: string, params: typeof normParams = normParams) => {
     setNormMethod(method)
+    setNormParams(params)
     setBusy(true)
     try {
-      const res = await api.post('/api/normalization', { method })
+      const res = await api.post('/api/normalization', { method, ...params })
       setNormUnits(res.units)
       await ctx.refresh()
       await build()
@@ -111,6 +117,20 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
     setBusy(true)
     try {
       await api.upload('/api/demographics/upload', file)
+      await ctx.refresh()
+      await load()
+      await build()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const uploadVowelMap = async (file: File) => {
+    setBusy(true)
+    try {
+      await api.upload('/api/vowelmap/upload', file)
       await ctx.refresh()
       await load()
       await build()
@@ -162,13 +182,19 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
         <Button onClick={applySchema} busy={busy}>
           Apply mapping
         </Button>
-        {missing.length > 0 && <Notice kind="error">Required columns not mapped: {missing.join(', ')}</Notice>}
+        {missing.length > 0 && (
+          <Notice kind="error">
+            Couldn't auto-find a column for: <b>{missing.join(', ')}</b>. Pick the matching column
+            above — e.g. point <code>f1</code> at your first-formant column (often <code>F1</code> or{' '}
+            <code>F1_50</code>).
+          </Notice>
+        )}
       </details>
 
       <Card title="Prepare">
         <div className="grid-2">
           <Field label="Normalization method" hint={method?.description}>
-            <select value={normMethod} onChange={(e) => changeNorm(e.target.value)}>
+            <select value={normMethod} onChange={(e) => applyNorm(e.target.value, {})}>
               {methods.map((m) => (
                 <option key={m.key} value={m.key}>
                   {m.label}
@@ -186,13 +212,57 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
             </Field>
           )}
         </div>
+
+        {normMethod === 'watt_fabricius' && (
+          <div className="grid-2">
+            <Field label="High corner vowel (FLEECE)">
+              <input
+                value={normParams.corner_high ?? 'IY'}
+                onChange={(e) => applyNorm(normMethod, { ...normParams, corner_high: e.target.value })}
+              />
+            </Field>
+            <Field label="Low corner vowel (TRAP)">
+              <input
+                value={normParams.corner_low ?? 'AE'}
+                onChange={(e) => applyNorm(normMethod, { ...normParams, corner_low: e.target.value })}
+              />
+            </Field>
+          </div>
+        )}
+        {normMethod === 'labov_anae' && (
+          <Field label="Grand mean G" hint="log-mean scaling constant (Telsur = 6.896874)">
+            <input
+              type="number"
+              step="0.0001"
+              value={normParams.g_value ?? 6.896874}
+              onChange={(e) => applyNorm(normMethod, { ...normParams, g_value: Number(e.target.value) })}
+            />
+          </Field>
+        )}
         {normUnits && <p className="muted small">Units: {normUnits}</p>}
+
+        <div className="grid-2">
+          <Field label="Outlier removal" hint="then click Apply & preview">
+            <label className="checkbox">
+              <input type="checkbox" checked={removeOutliers} onChange={(e) => setRemoveOutliers(e.target.checked)} />
+              drop tokens far from their speaker×vowel mean
+            </label>
+          </Field>
+          {removeOutliers && (
+            <Field label="Threshold (SD)">
+              <input type="number" step="0.5" min={1} value={outlierSd} onChange={(e) => setOutlierSd(Number(e.target.value))} />
+            </Field>
+          )}
+        </div>
+        <Field label="Custom vowel-label map (optional)" hint="CSV with columns: code,label — for IPA / non-English coding">
+          <input type="file" accept=".csv,.tsv" onChange={(e) => e.target.files?.[0] && uploadVowelMap(e.target.files[0])} />
+        </Field>
       </Card>
 
       <Card title="Choose vowels & filters">
         <Field label="Vowels to keep (none selected = all)">
           <MultiSelect
-            options={vowels.map((v) => ({ value: v.vowel, label: `${v.label}  (n=${v.n})` }))}
+            options={vowels.map((v) => ({ value: v.vowel, label: `${v.keyword ?? v.vowel} · ${v.n}` }))}
             selected={selectedVowels}
             onChange={setSelectedVowels}
           />

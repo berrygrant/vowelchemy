@@ -10,17 +10,36 @@ Priority: **P0** = blocks or badly frustrates basic use · **P1** = important ·
 
 ---
 
-## Shipped in this PR
+## Shipped
+
+Everything in the plan below has now landed. Round one:
 
 - ✅ **Points overlaid on violins** (`visualization.formant_cross`, `pointpos=0`).
-- ✅ **Root-folder auto-detect** — give one root, we fuzzy-match the audio /
-  transcript / aligned sub-folders (`corpus.suggest_corpus_layout`,
-  `POST /api/corpus/autodetect`).
-- ✅ **Click-to-select directory picker** — a server-side folder browser
-  (`corpus.list_directory`, `GET /api/browse`, `FolderPicker`/`PathInput`).
-- ✅ **Live progress bars** for MFA/new-fave — background jobs with phase +
-  percent parsed from tool output (`jobs.py`, `POST /api/align|extract` →
-  `GET /api/jobs/{id}`, `ProgressBar`/`useJob`).
+- ✅ **Root-folder auto-detect** (`corpus.suggest_corpus_layout`, `POST /api/corpus/autodetect`).
+- ✅ **Click-to-select directory picker** (`corpus.list_directory`, `GET /api/browse`, `FolderPicker`/`PathInput`).
+- ✅ **Live progress bars** for MFA/new-fave (`jobs.py`, `/api/jobs/{id}`, `ProgressBar`/`useJob`).
+
+Round two (the full milestone plan):
+
+| Item | Status | Where |
+|---|---|---|
+| U1 Node-free install | ✅ | committed `frontend/dist`, `vowelchemy setup`, `Dockerfile` |
+| U2/U4 Glossary + verdicts | ✅ | `glossary.py`, `/api/glossary`, `GlossaryDrawer`, JSD verdict column |
+| U3 Keyword vowel chips | ✅ | `/api/vowels` `keyword`, chips across stages |
+| U5 Friendlier errors | ✅ | schema/tracks error copy |
+| R1 Save/Load recipe | ✅ | `/api/recipe`, `SessionPanel` |
+| R2 Bootstrap CIs + Pillai p | ✅ | `metrics.jsd_ci`/`pillai_p`, CI error-bars + verdict |
+| R3 CLI align/extract | ✅ | `vowelchemy align` / `extract` |
+| R4 Trajectories | ✅ | `trajectories.py`, tracks demo, Trajectories tab |
+| R5 Outlier removal | ✅ | Dataset toggle over `flag_outliers` |
+| R6 Norm params + vowel maps | ✅ | WF corners / ANAE G inputs, `/api/vowelmap/upload` |
+| R7 Thinning + density modes | ✅ | `vowel_space(mode=…, max_points=…)` |
+| R8 Publication export | ✅ | PNG/SVG + scale in `PlotlyChart` |
+| R9 Browse confinement | ✅ | `VOWELCHEMY_BROWSE_ROOT`, `is_within_root` |
+| R10 Persistent projects + job reconnect | ✅ | `projects.py`, `/api/projects`, `useJob` localStorage |
+| R11 Tool smoke tests + CI | ✅ | `tests/test_smoke_tools.py`, `.github/workflows/ci.yml` |
+
+The tables below are kept as the original audit record.
 
 ---
 

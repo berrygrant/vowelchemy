@@ -38,8 +38,9 @@ _ALIASES: dict[str, list[str]] = {
                "previous_segment", "pre_word"],
     "folseg": ["fol_seg", "abs_fol_seg", "following", "next_phone", "fol_segment",
                "following_segment", "fol_word"],
-    "time": ["time", "timepoint", "midpoint", "t_mid", "t"],
-    "token_id": ["id", "token_id", "uid", "token"],
+    "time": ["prop_time", "rel_time", "norm_time", "time", "timepoint", "midpoint",
+             "t_mid", "t", "frame"],
+    "token_id": ["id", "token_id", "uid", "token", "token_num", "segment_id"],
 }
 
 # Logical fields that must be present for any quantitative analysis.

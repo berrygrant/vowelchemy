@@ -47,9 +47,30 @@ You can explore the entire analysis, visualization, and separation-metrics
 workflow immediately using **Demo mode** (a button in the sidebar) — no corpus,
 aligner, or R required.
 
+> **No Node?** The built UI (`frontend/dist`) is committed, so `pip install .`
+> then `vowelchemy app` works without Node. To rebuild after changing the UI,
+> run `vowelchemy setup` (needs Node ≥ 18). Or use Docker — no local Python or
+> Node needed:
+>
+> ```bash
+> docker build -t vowelchemy .
+> docker run -p 8000:8000 -v /path/to/corpora:/data vowelchemy
+> ```
+>
 > **Developing the UI?** Run the backend with `vowelchemy app` and, in another
 > terminal, `cd frontend && npm run dev` for a hot-reloading dev server at
 > `http://localhost:5173` that proxies `/api` to the backend.
+
+### Advanced / researcher features
+
+Save & reload a **reproducible recipe** (config as JSON) and **named projects**
+(sidebar); **bootstrap JSD confidence intervals** and a **Pillai permutation
+p-value**; **outlier removal**; **formant-trajectory** plots for diphthongs
+(Visualize → Trajectories); **density/contour** vowel-space modes and token
+thinning for large corpora; **PNG/SVG export**; configurable normalization
+parameters and **custom (IPA/non-English) vowel-label maps**; an in-app
+**glossary**. The folder browser can be confined with
+`VOWELCHEMY_BROWSE_ROOT=/data` when the server isn't purely local.
 
 ### 2. The aligner and extractor (acquisition half)
 
@@ -188,11 +209,17 @@ Two engines:
 
 ```bash
 vowelchemy app                                    # launch the app
+vowelchemy setup                                   # build the UI (needs Node)
 vowelchemy demo ./demo                             # write a synthetic dataset
 vowelchemy discover ./audio --transcripts ./texts  # scan a corpus
+vowelchemy align ./audio --transcripts ./texts -o ./aligned    # MFA (scripted)
+vowelchemy extract ./audio --aligned ./aligned -o ./vowels     # new-fave (scripted)
 vowelchemy normalize vowels.csv -m lobanov -s speakers.csv -o out.csv
 vowelchemy separation vowels.csv --vowels BEET,BET,LOT,THOUGHT --group-by "Age Group" -s speakers.csv
 ```
+
+The full pipeline is scriptable headlessly with `align` + `extract`, so many
+corpora can be batch-processed without the UI.
 
 Vowels can be given as ARPABET (`IY`), Wells lexical sets (`FLEECE`), or
 keywords (`BEET`) — all resolve to the same category.

@@ -4,7 +4,7 @@ import type { Ctx, GroupingColumns, PlotlyFigure, VowelInfo } from '../types'
 import { Card, Field, MultiSelect, Notice } from '../components/ui'
 import { PlotlyChart } from '../components/PlotlyChart'
 
-type Tab = 'cross' | 'space' | 'ridge'
+type Tab = 'cross' | 'space' | 'ridge' | 'traj'
 const EXCLUDE = ['vowel_label', 'vowel_canon', 'speaker', 'vowel']
 const CONTEXT = ['pre_seg', 'fol_seg', 'pre_word', 'fol_word', 'stress', 'word']
 
@@ -37,6 +37,51 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
   const [spaceVowels, setSpaceVowels] = useState<string[]>([])
   const [ridgeValue, setRidgeValue] = useState('F1_norm')
   const [ridgeGroup, setRidgeGroup] = useState('')
+  const [spaceMode, setSpaceMode] = useState('scatter')
+  const [trajKind, setTrajKind] = useState('space')
+  const [trajValue, setTrajValue] = useState('F1_norm')
+  const [trajVowels, setTrajVowels] = useState<string[]>([])
+  const [tracksPath, setTracksPath] = useState('')
+  const [loadingTracks, setLoadingTracks] = useState(false)
+  const [trajVowelOpts, setTrajVowelOpts] = useState<{ value: string; label: string }[]>([])
+  const tracksLoaded = ctx.status?.data.tracks_loaded
+
+  useEffect(() => {
+    if (tracksLoaded) {
+      api
+        .get('/api/tracks/vowels')
+        .then((rows: { vowel: string; keyword: string }[]) =>
+          setTrajVowelOpts(rows.map((r) => ({ value: r.vowel, label: r.keyword }))),
+        )
+        .catch(() => {})
+    }
+  }, [tracksLoaded])
+
+  const loadDemoTracks = async () => {
+    setLoadingTracks(true)
+    setError('')
+    try {
+      await api.post('/api/tracks/demo')
+      await ctx.refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoadingTracks(false)
+    }
+  }
+
+  const loadTracksPath = async () => {
+    setLoadingTracks(true)
+    setError('')
+    try {
+      await api.post('/api/tracks/load', { csv_path: tracksPath })
+      await ctx.refresh()
+    } catch (e) {
+      setError((e as Error).message)
+    } finally {
+      setLoadingTracks(false)
+    }
+  }
 
   useEffect(() => {
     if (!loaded) return
@@ -77,13 +122,27 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
         fig = await api.post('/api/figure/vowel-space', {
           color: spaceColor,
           show_tokens: spaceTokens,
+          mode: spaceMode,
           vowels: spaceVowels.length ? spaceVowels : null,
           dark: ctx.dark,
         })
-      } else {
+      } else if (tab === 'ridge') {
         fig = await api.post('/api/figure/ridgeline', {
           value: ridgeValue,
           group: ridgeGroup,
+          dark: ctx.dark,
+        })
+      } else {
+        // trajectories
+        if (!tracksLoaded) {
+          setFigure(null)
+          setLoadingFig(false)
+          return
+        }
+        fig = await api.post('/api/figure/trajectory', {
+          kind: trajKind,
+          value: trajValue,
+          vowels: trajVowels.length ? trajVowels : null,
           dark: ctx.dark,
         })
       }
@@ -96,7 +155,8 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
     }
   }, [
     loaded, grouping, tab, crossFormant, crossX, crossSplit, crossKind, crossVowels,
-    spaceColor, spaceTokens, spaceVowels, ridgeValue, ridgeGroup, ctx.dark,
+    spaceColor, spaceTokens, spaceMode, spaceVowels, ridgeValue, ridgeGroup,
+    trajKind, trajValue, trajVowels, tracksLoaded, ctx.dark,
   ])
 
   useEffect(() => {
@@ -114,7 +174,7 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
 
   const demoCols = (grouping?.columns ?? []).filter((c) => !EXCLUDE.includes(c))
   const formants = grouping?.norm_formants ?? ['F1_norm', 'F2_norm']
-  const vowelOpts = vowels.map((v) => ({ value: v.vowel, label: v.vowel }))
+  const vowelOpts = vowels.map((v) => ({ value: v.vowel, label: v.keyword ?? v.vowel }))
 
   return (
     <div className="stage">
@@ -128,6 +188,9 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
         </button>
         <button className={tab === 'ridge' ? 'tab-on' : ''} onClick={() => setTab('ridge')}>
           Ridgeline
+        </button>
+        <button className={tab === 'traj' ? 'tab-on' : ''} onClick={() => setTab('traj')}>
+          Trajectories
         </button>
       </div>
 
@@ -190,9 +253,16 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
                   ))}
                 </select>
               </Field>
+              <Field label="Mode" hint="contour/ellipse suit very large corpora">
+                <select value={spaceMode} onChange={(e) => setSpaceMode(e.target.value)}>
+                  <option value="scatter">scatter + ellipse</option>
+                  <option value="contour">density contour</option>
+                  <option value="ellipse">ellipse only</option>
+                </select>
+              </Field>
               <Field label="Tokens">
                 <label className="checkbox">
-                  <input type="checkbox" checked={spaceTokens} onChange={(e) => setSpaceTokens(e.target.checked)} />
+                  <input type="checkbox" checked={spaceTokens} onChange={(e) => setSpaceTokens(e.target.checked)} disabled={spaceMode !== 'scatter'} />
                   show individual tokens
                 </label>
               </Field>
@@ -222,6 +292,57 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
                 </select>
               </Field>
             </div>
+          </>
+        )}
+
+        {tab === 'traj' && (
+          <>
+            <p className="muted">
+              Mean vowel trajectories from formant <b>tracks</b> — diphthongs (PRICE, MOUTH) move,
+              monophthongs stay put.
+            </p>
+            {!tracksLoaded ? (
+              <Notice kind="info">
+                No trajectory (tracks) data loaded yet.
+                <div className="row-between" style={{ marginTop: 8 }}>
+                  <button className="btn btn-small" onClick={loadDemoTracks} disabled={loadingTracks}>
+                    ✨ Load demo trajectories
+                  </button>
+                  <input
+                    className="grow"
+                    value={tracksPath}
+                    onChange={(e) => setTracksPath(e.target.value)}
+                    placeholder="…or a tracks CSV path on the server"
+                  />
+                  <button className="btn btn-small" onClick={loadTracksPath} disabled={!tracksPath || loadingTracks}>
+                    Load
+                  </button>
+                </div>
+              </Notice>
+            ) : (
+              <>
+                <div className="grid-2">
+                  <Field label="View">
+                    <select value={trajKind} onChange={(e) => setTrajKind(e.target.value)}>
+                      <option value="space">F2×F1 path</option>
+                      <option value="time">formant over time</option>
+                    </select>
+                  </Field>
+                  {trajKind === 'time' && (
+                    <Field label="Formant">
+                      <select value={trajValue} onChange={(e) => setTrajValue(e.target.value)}>
+                        {formants.map((f) => (
+                          <option key={f}>{f}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  )}
+                </div>
+                <Field label="Vowels (none = all)">
+                  <MultiSelect options={trajVowelOpts} selected={trajVowels} onChange={setTrajVowels} />
+                </Field>
+              </>
+            )}
           </>
         )}
       </Card>

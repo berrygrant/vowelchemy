@@ -65,3 +65,22 @@ def test_pairwise_separation_respects_min_tokens():
     df = add_vowel_labels(join_demographics(tokens, speakers, schema), schema)
     sep = metrics.pairwise_separation(df, schema, vowels=["IY", "EH"], min_tokens=10_000)
     assert sep.empty  # nothing meets an impossible threshold
+
+
+def test_jsd_ci_brackets_estimate():
+    a = _cluster([0, 0], seed=1)
+    b = _cluster([3, 3], seed=2)
+    jsd = metrics.jensen_shannon_divergence(a, b)
+    lo, hi = metrics.jsd_ci(a, b, n_boot=60, seed=0)
+    assert not np.isnan(lo) and lo <= hi
+    assert lo - 0.2 <= jsd <= hi + 0.2
+
+
+def test_pillai_p_lower_for_separated():
+    a = _cluster([0, 0], seed=1)
+    far = _cluster([50, 50], seed=3)
+    same = _cluster([0, 0], seed=2)
+    p_sep = metrics.pillai_p(a, far, n_perm=200)
+    p_same = metrics.pillai_p(a, same, n_perm=200)
+    assert p_sep < 0.05
+    assert p_same > p_sep
