@@ -1,0 +1,46 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vowelchemy"
+version = "0.1.0"
+description = "A lab-friendly pipeline for turning conversational speech corpora into normalized, analyzable vowel data."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Vowelchemy contributors" }]
+keywords = ["sociophonetics", "linguistics", "vowels", "forced-alignment", "corpus"]
+
+# Core dependencies power the *analysis half* of the pipeline (normalization,
+# filtering, visualization, separation metrics). They are all pip-installable
+# and lightweight. The *acquisition half* (Montreal Forced Aligner, new-fave)
+# is orchestrated as external command-line tools and is installed separately —
+# see README "Installing the aligner & extractor".
+dependencies = [
+    "streamlit>=1.30",
+    "pandas>=1.5",
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "plotly>=5.18",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7", "ruff>=0.1"]
+
+[project.scripts]
+vowelchemy = "vowelchemy.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/berrygrant/vowelchemy"
+
+[tool.setuptools]
+packages = ["vowelchemy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
