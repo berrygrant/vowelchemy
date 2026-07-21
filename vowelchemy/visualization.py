@@ -250,8 +250,13 @@ def formant_cross(
         fig = px.strip(plot_df, **common)
     else:
         fig = px.violin(plot_df, box=True, points=points, **common)
-        fig.update_traces(meanline_visible=True, scalemode="width",
-                          width=0.85, opacity=0.85, marker=dict(size=3, opacity=0.4))
+        # Overlay the raw tokens *on* the violin body (pointpos=0 centres them;
+        # jitter spreads them across the width) rather than off to one side.
+        fig.update_traces(
+            meanline_visible=True, scalemode="width", width=0.85, opacity=0.82,
+            points=points, pointpos=0, jitter=0.5,
+            marker=dict(size=3, opacity=0.45),
+        )
         fig.update_layout(violinmode="group")
 
     fig.update_yaxes(title=_axis_title(formant))

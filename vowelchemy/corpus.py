@@ -333,3 +333,195 @@ def find_vowel_data(*search_dirs: str | os.PathLike) -> list[Path]:
                 seen.add(path)
                 found.append(path)
     return sorted(found)
+
+
+# --------------------------------------------------------------------------- #
+# Layout auto-detection (fuzzy: find the sub-folders that hold each field)
+# --------------------------------------------------------------------------- #
+_VOWEL_CSV_HINTS = ("vowel", "formant", "fave", "tracks", "points", "measurement", "_norm")
+_SPEAKER_CSV_RE = re.compile(r"speaker|demograph|meta|subject|participant|social|info", re.I)
+
+
+@dataclass
+class LayoutSuggestion:
+    root: Path
+    audio_dir: Optional[Path] = None
+    transcript_dir: Optional[Path] = None
+    aligned_dir: Optional[Path] = None
+    speakers_csv: Optional[Path] = None
+    n_wav: int = 0
+    n_transcript: int = 0
+    n_aligned: int = 0
+    audio_dirs: list[Path] = field(default_factory=list)
+    transcript_dirs: list[Path] = field(default_factory=list)
+    aligned_dirs: list[Path] = field(default_factory=list)
+    vowel_csvs: list[Path] = field(default_factory=list)
+
+    def to_dict(self) -> dict:
+        def s(p):
+            return str(p) if p else None
+
+        return {
+            "root": str(self.root),
+            "audio_dir": s(self.audio_dir),
+            "transcript_dir": s(self.transcript_dir),
+            "aligned_dir": s(self.aligned_dir),
+            "speakers_csv": s(self.speakers_csv),
+            "counts": {"wav": self.n_wav, "transcript": self.n_transcript, "aligned": self.n_aligned},
+            "audio_dirs": [str(p) for p in self.audio_dirs],
+            "transcript_dirs": [str(p) for p in self.transcript_dirs],
+            "aligned_dirs": [str(p) for p in self.aligned_dirs],
+            "vowel_csvs": [str(p) for p in self.vowel_csvs],
+        }
+
+
+def _common_ancestor(paths: list[Path], root: Path) -> Optional[Path]:
+    if not paths:
+        return None
+    dirs = [str(p.parent) for p in paths]
+    try:
+        return Path(os.path.commonpath(dirs))
+    except ValueError:
+        return root
+
+
+def suggest_corpus_layout(
+    root: str | os.PathLike, max_files: int = 60000, max_sniff: int = 300
+) -> LayoutSuggestion:
+    """Scan ``root`` and guess which sub-folders hold audio / transcripts / alignments.
+
+    Detection is content-based (which folders actually contain ``.wav`` files,
+    transcripts, or *aligned* TextGrids), with each field's suggested folder set
+    to the shallowest common ancestor of the matching files — so a corpus laid
+    out as ``root/audio/<speaker>/*.wav`` resolves ``audio_dir`` to ``root/audio``.
+    """
+    root = Path(root).expanduser().resolve()
+    wavs: list[Path] = []
+    transcripts: list[Path] = []
+    aligned: list[Path] = []
+    csvs: list[Path] = []
+    seen_files = 0
+    sniffed = 0
+
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        for fn in filenames:
+            ext = os.path.splitext(fn)[1].lower()
+            path = Path(dirpath) / fn
+            if ext == ".wav":
+                wavs.append(path)
+            elif ext in {".lab", ".txt"}:
+                transcripts.append(path)
+            elif ext == ".textgrid":
+                if sniffed < max_sniff:
+                    sniffed += 1
+                    (aligned if is_aligned_textgrid(path) else transcripts).append(path)
+                else:
+                    transcripts.append(path)  # assume unaligned once past the sniff budget
+            elif ext in {".csv", ".tsv"}:
+                csvs.append(path)
+            seen_files += 1
+        if seen_files > max_files:
+            break
+
+    audio_dir = _common_ancestor(wavs, root)
+    transcript_dir = _common_ancestor(transcripts, root) or audio_dir
+    aligned_dir = _common_ancestor(aligned, root)
+
+    vowel_csvs = [p for p in csvs if any(h in p.name.lower() for h in _VOWEL_CSV_HINTS)]
+    speaker_csvs = [
+        p for p in csvs if _SPEAKER_CSV_RE.search(p.name) and p not in vowel_csvs
+    ]
+    speakers_csv = speaker_csvs[0] if speaker_csvs else None
+
+    def dirs_of(paths: list[Path]) -> list[Path]:
+        return sorted({p.parent for p in paths})
+
+    return LayoutSuggestion(
+        root=root,
+        audio_dir=audio_dir,
+        transcript_dir=transcript_dir,
+        aligned_dir=aligned_dir,
+        speakers_csv=speakers_csv,
+        n_wav=len(wavs),
+        n_transcript=len(transcripts),
+        n_aligned=len(aligned),
+        audio_dirs=dirs_of(wavs)[:25],
+        transcript_dirs=dirs_of(transcripts)[:25],
+        aligned_dirs=dirs_of(aligned)[:25],
+        vowel_csvs=sorted(vowel_csvs)[:25],
+    )
+
+
+# --------------------------------------------------------------------------- #
+# Server-side directory browser (the app's backend runs on the user's machine)
+# --------------------------------------------------------------------------- #
+def _contains_ext(directory: Path, exts: tuple[str, ...], max_depth: int = 1) -> bool:
+    """True if a file with one of ``exts`` exists in ``directory`` or, up to
+    ``max_depth`` levels down, a sub-directory — so a parent ``audio/`` folder is
+    flagged even when the ``.wav`` files sit in per-speaker sub-folders."""
+    stack: list[tuple[Path, int]] = [(directory, 0)]
+    scanned = 0
+    while stack:
+        d, depth = stack.pop()
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    if e.is_file() and os.path.splitext(e.name)[1].lower() in exts:
+                        return True
+                    if e.is_dir() and depth < max_depth and not e.name.startswith("."):
+                        stack.append((Path(e.path), depth + 1))
+        except OSError:
+            continue
+        scanned += 1
+        if scanned > 250:  # bound the work for huge trees
+            break
+    return False
+
+
+def list_directory(
+    path: Optional[str | os.PathLike] = None,
+    exts: Optional[list[str]] = None,
+    max_entries: int = 3000,
+) -> dict:
+    """List sub-directories (and optionally files of given extensions) of ``path``.
+
+    Powers the "click to select a directory" picker. Defaults to the user's home
+    directory. Each sub-directory is annotated with whether it directly contains
+    audio or transcripts, so the picker can hint at likely corpus folders.
+    """
+    base = Path(path).expanduser().resolve() if path else Path.home()
+    if not base.is_dir():
+        raise NotADirectoryError(str(base))
+    wanted = {("." + e.lstrip(".")).lower() for e in exts} if exts else None
+
+    dirs: list[dict] = []
+    files: list[dict] = []
+    try:
+        with os.scandir(base) as it:
+            for entry in it:
+                if entry.name.startswith("."):
+                    continue
+                try:
+                    if entry.is_dir():
+                        dp = Path(entry.path)
+                        dirs.append({
+                            "name": entry.name,
+                            "path": str(dp),
+                            "has_wav": _contains_ext(dp, (".wav",)),
+                            "has_transcript": _contains_ext(dp, (".lab", ".txt", ".textgrid")),
+                        })
+                    elif wanted and os.path.splitext(entry.name)[1].lower() in wanted:
+                        files.append({"name": entry.name, "path": entry.path})
+                except OSError:
+                    continue
+                if len(dirs) + len(files) > max_entries:
+                    break
+    except PermissionError as exc:
+        raise PermissionError(f"Cannot read {base}: {exc}") from exc
+
+    dirs.sort(key=lambda d: d["name"].lower())
+    files.sort(key=lambda f: f["name"].lower())
+    parent = str(base.parent) if base.parent != base else None
+    return {"path": str(base), "parent": parent, "home": str(Path.home()),
+            "dirs": dirs, "files": files}

@@ -1,7 +1,8 @@
-import { useState } from 'react'
-import { api } from '../api'
+import { useEffect, useState } from 'react'
 import type { Ctx } from '../types'
 import { Button, Card, Field, LogBox, Notice } from '../components/ui'
+import { ProgressBar } from '../components/ProgressBar'
+import { useJob } from '../hooks/useJob'
 
 export function AlignStage({ ctx }: { ctx: Ctx }) {
   const mfa = ctx.status?.tools.mfa
@@ -10,39 +11,36 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
   const [numJobs, setNumJobs] = useState(3)
   const [outputDir, setOutputDir] = useState('')
   const [downloadModels, setDownloadModels] = useState(false)
-  const [log, setLog] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [ok, setOk] = useState<boolean | null>(null)
+  const [refreshed, setRefreshed] = useState(false)
+  const { job, error, start, running } = useJob()
 
-  const run = async () => {
-    setBusy(true)
-    setError('')
-    setOk(null)
-    try {
-      const res = await api.post('/api/align', {
-        acoustic_model: acoustic,
-        dictionary,
-        num_jobs: numJobs,
-        output_dir: outputDir || null,
-        download_models: downloadModels,
-      })
-      setLog(res.log)
-      setOk(res.ok)
-      await ctx.refresh()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
+  useEffect(() => {
+    if (job?.status === 'done' && !refreshed) {
+      ctx.refresh()
+      setRefreshed(true)
     }
+  }, [job?.status, refreshed, ctx])
+
+  const run = () => {
+    setRefreshed(false)
+    start('/api/align', {
+      acoustic_model: acoustic,
+      dictionary,
+      num_jobs: numJobs,
+      output_dir: outputDir || null,
+      download_models: downloadModels,
+    })
   }
+
+  const result = job?.result as { ok?: boolean; n_textgrids?: number } | null | undefined
 
   return (
     <div className="stage">
       <h1>2 · Force-align with MFA</h1>
       <p className="muted">
         If recordings lack a phone tier, force-align them with the Montreal Forced Aligner.
-        Vowelchemy stages the corpus (even across separate folders) and runs <code>mfa align</code>.
+        Vowelchemy stages the corpus (even across separate folders) and runs <code>mfa align</code>,
+        showing live progress.
       </p>
 
       {!mfa?.available ? (
@@ -79,16 +77,22 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
             <input type="checkbox" checked={downloadModels} onChange={(e) => setDownloadModels(e.target.checked)} />
             Download the acoustic model + dictionary first
           </label>
-          <Button primary onClick={run} busy={busy}>
+          <Button primary onClick={run} busy={running}>
             ▶️ Run alignment
           </Button>
-          <p className="muted small">Alignment can take a while for large corpora.</p>
+
+          {running && <ProgressBar percent={job!.percent} phase={job!.phase} />}
           {error && <Notice kind="error">{error}</Notice>}
-          {ok === true && (
-            <Notice kind="success">Alignment complete — continue to <b>stage 3</b>.</Notice>
-          )}
-          {ok === false && <Notice kind="error">MFA did not produce TextGrids. See the log.</Notice>}
-          <LogBox text={log} />
+          {job?.status === 'done' &&
+            (result?.ok ? (
+              <Notice kind="success">
+                Alignment complete — {result.n_textgrids} TextGrids. Continue to <b>stage 3</b>.
+              </Notice>
+            ) : (
+              <Notice kind="error">MFA did not produce TextGrids. See the log.</Notice>
+            ))}
+          {job?.status === 'error' && <Notice kind="error">{job.error}</Notice>}
+          <LogBox text={job?.log ?? ''} />
         </Card>
       )}
     </div>

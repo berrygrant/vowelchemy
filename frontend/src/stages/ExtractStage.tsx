@@ -1,7 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Ctx } from '../types'
 import { Button, Card, Field, LogBox, Notice } from '../components/ui'
+import { ProgressBar } from '../components/ProgressBar'
+import { PathInput } from '../components/PathInput'
+import { useJob } from '../hooks/useJob'
 
 export function ExtractStage({ ctx }: { ctx: Ctx }) {
   const nf = ctx.status?.tools.newfave
@@ -9,30 +12,29 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
   const [outputDir, setOutputDir] = useState('')
   const [excludeOverlaps, setExcludeOverlaps] = useState(true)
   const [csvPath, setCsvPath] = useState('')
-  const [log, setLog] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [notes, setNotes] = useState<string[]>([])
+  const [refreshed, setRefreshed] = useState(false)
+  const { job, error: jobError, start, running } = useJob()
 
-  const run = async () => {
-    setBusy(true)
-    setError('')
-    setNotes([])
-    try {
-      const res = await api.post('/api/extract', {
-        aligned_dir: alignedDir || null,
-        output_dir: outputDir || null,
-        exclude_overlaps: excludeOverlaps,
+  const result = job?.result as { ok?: boolean; n_tokens?: number; notes?: string[] } | null | undefined
+
+  useEffect(() => {
+    if (job?.status === 'done' && !refreshed) {
+      setRefreshed(true)
+      ctx.refresh().then(() => {
+        if (result?.ok) ctx.go('dataset')
       })
-      setLog(res.log)
-      setNotes(res.notes || [])
-      await ctx.refresh()
-      if (res.ok) ctx.go('dataset')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
     }
+  }, [job?.status, refreshed, ctx, result])
+
+  const run = () => {
+    setRefreshed(false)
+    start('/api/extract', {
+      aligned_dir: alignedDir || null,
+      output_dir: outputDir || null,
+      exclude_overlaps: excludeOverlaps,
+    })
   }
 
   const loadCsv = async () => {
@@ -72,25 +74,21 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
       </p>
 
       <Card title="Load existing vowel data" subtitle="Already have measurements? Skip extraction.">
+        <Field label="Vowel CSV on the server">
+          <PathInput value={csvPath} onChange={setCsvPath} mode="file" exts="csv,tsv" placeholder="/path/to/vowels.csv" />
+        </Field>
         <div className="row-between">
-          <input
-            className="grow"
-            value={csvPath}
-            onChange={(e) => setCsvPath(e.target.value)}
-            placeholder="/path/to/vowels.csv (on the server)"
-          />
           <Button onClick={loadCsv} disabled={!csvPath} busy={busy}>
             Load path
           </Button>
-        </div>
-        <div className="row-between">
-          <span className="muted small">…or upload a CSV from your computer</span>
+          <span className="muted small">or upload from your computer:</span>
           <input
             type="file"
             accept=".csv,.tsv"
             onChange={(e) => e.target.files?.[0] && uploadCsv(e.target.files[0])}
           />
         </div>
+        {error && <Notice kind="error">{error}</Notice>}
       </Card>
 
       {!nf?.available ? (
@@ -105,26 +103,35 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
           </p>
           <div className="grid-2">
             <Field label="Aligned TextGrid folder" hint="blank = use the aligned output">
-              <input value={alignedDir} onChange={(e) => setAlignedDir(e.target.value)} />
+              <PathInput value={alignedDir} onChange={setAlignedDir} />
             </Field>
             <Field label="Output folder for measurements">
-              <input value={outputDir} onChange={(e) => setOutputDir(e.target.value)} />
+              <PathInput value={outputDir} onChange={setOutputDir} />
             </Field>
           </div>
           <label className="checkbox">
             <input type="checkbox" checked={excludeOverlaps} onChange={(e) => setExcludeOverlaps(e.target.checked)} />
             Exclude overlapping speech
           </label>
-          <Button primary onClick={run} busy={busy}>
+          <Button primary onClick={run} busy={running}>
             ▶️ Extract vowels
           </Button>
-          {error && <Notice kind="error">{error}</Notice>}
-          {notes.map((n, i) => (
+
+          {running && <ProgressBar percent={job!.percent} phase={job!.phase} />}
+          {jobError && <Notice kind="error">{jobError}</Notice>}
+          {job?.status === 'done' && result?.ok && (
+            <Notice kind="success">Extracted {result.n_tokens} tokens → stage 4.</Notice>
+          )}
+          {job?.status === 'done' && !result?.ok && (
+            <Notice kind="error">Extraction produced no usable data. See the log.</Notice>
+          )}
+          {(result?.notes ?? []).map((n, i) => (
             <Notice kind="warn" key={i}>
               {n}
             </Notice>
           ))}
-          <LogBox text={log} />
+          {job?.status === 'error' && <Notice kind="error">{job.error}</Notice>}
+          <LogBox text={job?.log ?? ''} />
         </Card>
       )}
     </div>

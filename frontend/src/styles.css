@@ -484,3 +484,134 @@ input[type='file'] {
     transform: rotate(360deg);
   }
 }
+
+.btn-small {
+  padding: 5px 10px;
+  font-size: 0.82rem;
+  margin-top: 0;
+}
+
+/* Path input (text + Browse…) */
+.path-input {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.path-input input {
+  flex: 1;
+}
+
+/* Folder picker modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 50;
+  padding: 20px;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  width: min(680px, 100%);
+  max-height: 82vh;
+  display: flex;
+  flex-direction: column;
+  padding: 16px 18px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.3);
+}
+.modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.modal-foot {
+  margin-top: 12px;
+  display: flex;
+  justify-content: flex-end;
+}
+.picker-nav {
+  display: flex;
+  gap: 6px;
+}
+.browser {
+  margin-top: 10px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-height: 200px;
+}
+.browse-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 3px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.browse-row:last-child {
+  border-bottom: none;
+}
+.browse-name {
+  flex: 1;
+  text-align: left;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  padding: 5px 4px;
+  border-radius: 6px;
+}
+.browse-name:hover {
+  background: var(--surface-2);
+}
+.folder-ico {
+  opacity: 0.8;
+}
+
+/* Progress bar */
+.progress {
+  margin: 12px 0 4px;
+}
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 5px;
+}
+.progress-phase {
+  font-weight: 600;
+}
+.progress-pct {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.progress-track {
+  height: 9px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-fill {
+  height: 100%;
+  background: var(--primary);
+  border-radius: 999px;
+  transition: width 0.3s ease;
+}
+.progress-fill.indeterminate {
+  width: 35%;
+  animation: indeterminate 1.3s ease-in-out infinite;
+}
+@keyframes indeterminate {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}

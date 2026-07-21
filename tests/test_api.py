@@ -95,3 +95,31 @@ def test_grouping_columns(client):
     body = client.get("/api/grouping-columns", headers=h).json()
     assert "Age Group" in body["columns"] and "Sex" in body["columns"]
     assert "F1_norm" in body["norm_formants"]
+
+
+def test_corpus_autodetect_and_browse(client, tmp_path):
+    # A realistic multi-speaker layout: audio + transcripts in separate trees.
+    for spk in ("s1", "s2"):
+        (tmp_path / "audio" / spk).mkdir(parents=True)
+        (tmp_path / "texts" / spk).mkdir(parents=True)
+        (tmp_path / "audio" / spk / "r.wav").write_bytes(b"RIFF")
+        (tmp_path / "texts" / spk / "r.lab").write_text("hi")
+
+    det = client.post("/api/corpus/autodetect", json={"root_dir": str(tmp_path)}).json()
+    assert det["audio_dir"].endswith("/audio")
+    assert det["transcript_dir"].endswith("/texts")
+    assert det["counts"]["wav"] == 2
+
+    br = client.get("/api/browse", params={"path": str(tmp_path)}).json()
+    dirs = {d["name"]: d for d in br["dirs"]}
+    assert "audio" in dirs and "texts" in dirs
+    assert dirs["audio"]["has_wav"] is True  # detected one level deep
+    assert br["parent"] is not None
+
+    bad = client.post("/api/corpus/autodetect", json={"root_dir": str(tmp_path / "nope")})
+    assert bad.status_code == 400
+
+
+def test_align_requires_corpus_and_jobs_404(client):
+    assert client.post("/api/align", json={}, headers=H("s-noalign")).status_code == 400
+    assert client.get("/api/jobs/unknown-id").status_code == 404
