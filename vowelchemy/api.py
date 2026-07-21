@@ -39,10 +39,18 @@ from . import (
     sample_data,
     visualization as viz,
 )
-from .corpus import discover_corpus, find_vowel_data, validate_location
+from .corpus import (
+    discover_corpus,
+    find_vowel_data,
+    list_directory,
+    suggest_corpus_layout,
+    validate_location,
+)
+from .jobs import JobManager
 from .schema import ColumnSchema
 
 app = FastAPI(title="Vowelchemy API", version="0.1.0")
+JOBS = JobManager()
 
 # The app is a single-user local tool; allow the Vite dev server to call it.
 app.add_middleware(
@@ -163,6 +171,10 @@ class ScanRequest(BaseModel):
 
 class ValidateRequest(BaseModel):
     path: str
+
+
+class AutodetectRequest(BaseModel):
+    root_dir: str
 
 
 class LoadCsvRequest(BaseModel):
@@ -300,6 +312,25 @@ def corpus_scan(req: ScanRequest, x_vowelchemy_session: Optional[str] = Header(d
     }
 
 
+@app.post("/api/corpus/autodetect")
+def corpus_autodetect(req: AutodetectRequest):
+    """Given a root directory, fuzzy-detect the audio/transcript/aligned folders."""
+    st = validate_location(req.root_dir)
+    if not st.ok:
+        raise HTTPException(status_code=400, detail=f"Root folder problem: {st.message}")
+    return suggest_corpus_layout(req.root_dir).to_dict()
+
+
+@app.get("/api/browse")
+def browse(path: Optional[str] = None, exts: Optional[str] = None):
+    """List sub-directories (and optional files) for the folder picker."""
+    ext_list = [e for e in exts.split(",") if e] if exts else None
+    try:
+        return list_directory(path, exts=ext_list)
+    except (NotADirectoryError, FileNotFoundError, PermissionError, OSError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 # --------------------------------------------------------------------------- #
 # Data loading
 # --------------------------------------------------------------------------- #
@@ -349,7 +380,7 @@ async def upload_demographics(file: UploadFile = File(...),
 
 
 # --------------------------------------------------------------------------- #
-# Alignment / extraction (synchronous; return the log)
+# Alignment / extraction (run on a worker thread; poll /api/jobs/{id})
 # --------------------------------------------------------------------------- #
 @app.post("/api/align")
 def align(req: AlignRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
@@ -359,21 +390,23 @@ def align(req: AlignRequest, x_vowelchemy_session: Optional[str] = Header(defaul
     if not alignment.mfa_status().available:
         raise HTTPException(status_code=400, detail="MFA not detected. " + alignment.MFA_INSTALL_HINT)
     out_dir = req.output_dir or str(Path(s.inventory.audio_dir).parent / "vowelchemy_aligned")
-    log: list[str] = []
-    if req.download_models:
-        alignment.download_models(req.acoustic_model, req.dictionary, on_output=log.append)
-    res = alignment.align_inventory(
-        s.inventory, out_dir, dictionary=req.dictionary, acoustic_model=req.acoustic_model,
-        num_jobs=req.num_jobs, on_output=log.append,
-    )
-    if res.ok:
-        s.aligned_dir = str(res.output_dir)
-        s.output_dir = out_dir
-        s.inventory = discover_corpus(s.inventory.audio_dir,
-                                      transcript_dir=s.transcript_dir or None,
-                                      aligned_dir=str(res.output_dir))
-    return {"ok": res.ok, "log": "\n".join(log), "n_textgrids": len(res.textgrids),
-            "aligned_dir": str(res.output_dir)}
+
+    def target(emit):
+        if req.download_models:
+            alignment.download_models(req.acoustic_model, req.dictionary, on_output=emit)
+        res = alignment.align_inventory(
+            s.inventory, out_dir, dictionary=req.dictionary, acoustic_model=req.acoustic_model,
+            num_jobs=req.num_jobs, on_output=emit,
+        )
+        if res.ok:
+            s.aligned_dir = str(res.output_dir)
+            s.output_dir = out_dir
+            s.inventory = discover_corpus(s.inventory.audio_dir,
+                                          transcript_dir=s.transcript_dir or None,
+                                          aligned_dir=str(res.output_dir))
+        return {"ok": res.ok, "n_textgrids": len(res.textgrids), "aligned_dir": str(res.output_dir)}
+
+    return {"job_id": JOBS.start("align", target).id}
 
 
 @app.post("/api/extract")
@@ -385,17 +418,28 @@ def extract(req: ExtractRequest, x_vowelchemy_session: Optional[str] = Header(de
         raise HTTPException(status_code=400, detail="new-fave not detected. " + extraction.NEWFAVE_INSTALL_HINT)
     aligned_dir = req.aligned_dir or s.aligned_dir or s.output_dir
     out_dir = req.output_dir or str(Path(s.inventory.audio_dir).parent / "vowelchemy_vowels")
-    log: list[str] = []
-    res = extraction.extract_vowels(
-        s.inventory.audio_dir, aligned_dir, out_dir,
-        speakers_file=s.speakers_path or None, exclude_overlaps=req.exclude_overlaps,
-        on_output=log.append,
-    )
-    if res.ok:
-        _set_vowel_data(s, res.data, res.schema)
-    return {"ok": res.ok, "log": "\n".join(log),
-            "n_tokens": int(len(res.data)) if res.data is not None else 0,
-            "csv_path": str(res.csv_path) if res.csv_path else None, "notes": res.notes}
+
+    def target(emit):
+        res = extraction.extract_vowels(
+            s.inventory.audio_dir, aligned_dir, out_dir,
+            speakers_file=s.speakers_path or None, exclude_overlaps=req.exclude_overlaps,
+            on_output=emit,
+        )
+        if res.ok:
+            _set_vowel_data(s, res.data, res.schema)
+        return {"ok": res.ok,
+                "n_tokens": int(len(res.data)) if res.data is not None else 0,
+                "csv_path": str(res.csv_path) if res.csv_path else None, "notes": res.notes}
+
+    return {"job_id": JOBS.start("extract", target).id}
+
+
+@app.get("/api/jobs/{job_id}")
+def job_status(job_id: str):
+    snap = JOBS.snapshot(job_id)
+    if snap is None:
+        raise HTTPException(status_code=404, detail="Unknown job id.")
+    return snap
 
 
 # --------------------------------------------------------------------------- #

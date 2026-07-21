@@ -72,6 +72,45 @@ export interface SeparationResult {
   } | null
 }
 
+export interface LayoutSuggestion {
+  root: string
+  audio_dir: string | null
+  transcript_dir: string | null
+  aligned_dir: string | null
+  speakers_csv: string | null
+  counts: { wav: number; transcript: number; aligned: number }
+  audio_dirs: string[]
+  transcript_dirs: string[]
+  aligned_dirs: string[]
+  vowel_csvs: string[]
+}
+
+export interface BrowseEntry {
+  name: string
+  path: string
+  has_wav?: boolean
+  has_transcript?: boolean
+}
+
+export interface BrowseResult {
+  path: string
+  parent: string | null
+  home: string
+  dirs: BrowseEntry[]
+  files: { name: string; path: string }[]
+}
+
+export interface JobSnapshot {
+  id: string
+  kind: string
+  status: 'running' | 'done' | 'error'
+  phase: string | null
+  percent: number | null
+  log: string
+  result: Record<string, unknown> | null
+  error: string | null
+}
+
 export type PlotlyFigure = { data: unknown[]; layout: Record<string, unknown> }
 
 export type Stage = 'corpus' | 'align' | 'extract' | 'dataset' | 'visualize' | 'separation'

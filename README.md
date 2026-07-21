@@ -114,9 +114,9 @@ Separation** to watch the LOT~THOUGHT JSD fall from ~0.96 (older) to ~0.10
 
 | Stage | What it does |
 |-------|--------------|
-| **1 · Corpus** | Point at audio (`.wav`) and transcript folders. They can be the **same folder, separate folders, or per-speaker sub-folders**, and may be on a **mounted remote filesystem**. Vowelchemy pairs files by name, detects which recordings are already force-aligned, and finds any existing vowel CSVs. |
-| **2 · Align** | If recordings lack a phone tier, force-align them with MFA. Vowelchemy stages the corpus (even across separate folders), downloads models, and runs `mfa align`, streaming the log. |
-| **3 · Extract** | Measure vowel formants with new-fave's `fave-extract` (`corpus` / `subcorpora` mode), or load an existing measurement CSV. Raw Hz formants are kept so you can re-normalize freely. |
+| **1 · Corpus** | Give a single **root folder** and let Vowelchemy **auto-detect** the audio / transcript / aligned sub-folders (fuzzy, content-based), or set each path yourself with a **click-to-browse folder picker**. Folders can be the **same, separate, or per-speaker sub-folders**, and may be on a **mounted remote filesystem**. It pairs files by name, detects which recordings are already force-aligned, and finds existing vowel CSVs. |
+| **2 · Align** | If recordings lack a phone tier, force-align them with MFA. Vowelchemy stages the corpus (even across separate folders), downloads models, and runs `mfa align` on a background job with a **live progress bar** (phase + percent). |
+| **3 · Extract** | Measure vowel formants with new-fave's `fave-extract` (`corpus` / `subcorpora` mode) — again on a background job with a **live progress bar** — or load/upload an existing measurement CSV. Raw Hz formants are kept so you can re-normalize freely. |
 | **4 · Dataset** | Auto-detect the column schema (override if needed), join speaker demographics, pick a normalization method, select vowels, filter/group by any sociodemographic column, preview, and **download the tidy dataset as CSV**. |
 | **5 · Visualize** | Build interactive, **distribution-revealing** plots (see below). |
 | **6 · Separation** | Compute JSD / Pillai / Bhattacharyya separation between vowel categories, optionally within each level of a factor (e.g. Age Group). Uses phonJSD when available, the built-in engine otherwise. |
@@ -246,9 +246,10 @@ React renders them with plotly.js and never re-implements chart logic.
 vowelchemy/           # Python library + API (pip installable)
   api.py              # FastAPI backend — exposes the library over JSON
   cli.py              # command-line entry point (`vowelchemy …`)
-  corpus.py           # discovery, pairing, TextGrid/alignment detection
+  corpus.py           # discovery, pairing, alignment detection, autodetect + browse
   alignment.py        # MFA orchestration + corpus staging
   extraction.py       # new-fave orchestration
+  jobs.py             # background jobs + progress parsing (align/extract)
   normalization.py    # Lobanov, Labov-ANAE, Nearey, Bark, Watt–Fabricius, …
   schema.py           # column auto-detection
   analysis.py         # join / select / filter / group / summarize
@@ -263,8 +264,14 @@ frontend/             # React + Vite + TypeScript single-page app
   src/components/*    # sidebar, PlotlyChart, DataTable, form controls
   src/api.ts          # typed fetch client (session-aware)
 examples/             # ready-to-use demo CSVs
+docs/QOL_AUDIT.md     # usability audit (student + researcher) & roadmap
 tests/                # pytest suite (library + API)
 ```
+
+> **Local-tool security note.** The folder picker lets the UI browse the
+> *server's* filesystem (the machine running `vowelchemy app`) — intended for
+> local single-user use. Don't expose the server to an untrusted network as-is;
+> a `--root` confinement flag is on the roadmap (see `docs/QOL_AUDIT.md`).
 
 ## Development
 
