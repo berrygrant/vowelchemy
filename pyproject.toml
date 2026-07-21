@@ -13,12 +13,14 @@ authors = [{ name = "Vowelchemy contributors" }]
 keywords = ["sociophonetics", "linguistics", "vowels", "forced-alignment", "corpus"]
 
 # Core dependencies power the *analysis half* of the pipeline (normalization,
-# filtering, visualization, separation metrics). They are all pip-installable
-# and lightweight. The *acquisition half* (Montreal Forced Aligner, new-fave)
-# is orchestrated as external command-line tools and is installed separately —
-# see README "Installing the aligner & extractor".
+# filtering, visualization, separation metrics) plus the FastAPI backend that
+# serves the React front-end. They are all pip-installable and lightweight. The
+# *acquisition half* (Montreal Forced Aligner, new-fave) is orchestrated as
+# external command-line tools and installed separately — see the README.
 dependencies = [
-    "streamlit>=1.30",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.27",
+    "python-multipart>=0.0.9",
     "pandas>=1.5",
     "numpy>=1.23",
     "scipy>=1.9",
@@ -26,7 +28,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=7", "ruff>=0.1"]
+dev = ["pytest>=7", "ruff>=0.1", "httpx>=0.27"]
 
 [project.scripts]
 vowelchemy = "vowelchemy.cli:main"

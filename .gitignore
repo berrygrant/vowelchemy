@@ -30,3 +30,8 @@ scratch/
 
 # But keep the bundled demo dataset
 !vowelchemy/data/
+
+# Frontend (React/Vite) — deps and build output are regenerated
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
