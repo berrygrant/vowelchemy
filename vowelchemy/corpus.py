@@ -479,18 +479,32 @@ def _contains_ext(directory: Path, exts: tuple[str, ...], max_depth: int = 1) ->
     return False
 
 
+def is_within_root(path: str | os.PathLike, root: Optional[str | os.PathLike]) -> bool:
+    """True if ``path`` is ``root`` or nested under it (or ``root`` is None)."""
+    if not root:
+        return True
+    root_p = Path(root).expanduser().resolve()
+    p = Path(path).expanduser().resolve()
+    return p == root_p or root_p in p.parents
+
+
 def list_directory(
     path: Optional[str | os.PathLike] = None,
     exts: Optional[list[str]] = None,
     max_entries: int = 3000,
+    root: Optional[str | os.PathLike] = None,
 ) -> dict:
     """List sub-directories (and optionally files of given extensions) of ``path``.
 
-    Powers the "click to select a directory" picker. Defaults to the user's home
-    directory. Each sub-directory is annotated with whether it directly contains
-    audio or transcripts, so the picker can hint at likely corpus folders.
+    Powers the "click to select a directory" picker. Defaults to ``root`` (or the
+    user's home directory). When ``root`` is set the browser is *confined* to it
+    — paths outside are clamped back to ``root`` and you cannot navigate above it.
+    Each sub-directory is annotated with whether it contains audio or transcripts.
     """
-    base = Path(path).expanduser().resolve() if path else Path.home()
+    root_p = Path(root).expanduser().resolve() if root else None
+    base = Path(path).expanduser().resolve() if path else (root_p or Path.home())
+    if root_p is not None and not is_within_root(base, root_p):
+        base = root_p  # clamp escapes back to the confinement root
     if not base.is_dir():
         raise NotADirectoryError(str(base))
     wanted = {("." + e.lstrip(".")).lower() for e in exts} if exts else None
@@ -522,6 +536,10 @@ def list_directory(
 
     dirs.sort(key=lambda d: d["name"].lower())
     files.sort(key=lambda f: f["name"].lower())
-    parent = str(base.parent) if base.parent != base else None
-    return {"path": str(base), "parent": parent, "home": str(Path.home()),
-            "dirs": dirs, "files": files}
+    if root_p is not None and base == root_p:
+        parent = None  # can't navigate above the confinement root
+    else:
+        parent = str(base.parent) if base.parent != base else None
+    home = str(root_p) if root_p is not None else str(Path.home())
+    return {"path": str(base), "parent": parent, "home": home,
+            "dirs": dirs, "files": files, "confined": root_p is not None}

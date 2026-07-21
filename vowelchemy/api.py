@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import io
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -36,21 +37,28 @@ from . import (
     metrics,
     normalization,
     phonjsd,
+    projects,
     sample_data,
+    trajectories,
     visualization as viz,
 )
 from .corpus import (
     discover_corpus,
     find_vowel_data,
+    is_within_root,
     list_directory,
     suggest_corpus_layout,
     validate_location,
 )
+from .glossary import GLOSSARY, jsd_verdict
 from .jobs import JobManager
 from .schema import ColumnSchema
 
 app = FastAPI(title="Vowelchemy API", version="0.1.0")
 JOBS = JobManager()
+
+# Optional confinement root for the folder browser (local-tool security).
+BROWSE_ROOT: Optional[str] = os.environ.get("VOWELCHEMY_BROWSE_ROOT") or None
 
 # The app is a single-user local tool; allow the Vite dev server to call it.
 app.add_middleware(
@@ -77,8 +85,14 @@ class Session:
     schema: Optional[ColumnSchema] = None
     demographics: Optional[pd.DataFrame] = None
     norm_method: str = "lobanov"
+    norm_params: dict = field(default_factory=dict)
+    remove_outliers: bool = False
+    outlier_sd: float = 2.5
+    vowel_label_map: Optional[dict] = None
     selected_vowels: list = field(default_factory=list)
     filters: dict = field(default_factory=dict)
+    tracks_df: Optional[pd.DataFrame] = None
+    tracks_schema: Optional[ColumnSchema] = None
 
 
 _SESSIONS: dict[str, Session] = {}
@@ -101,8 +115,13 @@ def prepared(session: Session):
             out = analysis.join_demographics(out, session.demographics, session.schema)
         except KeyError:
             pass
-    out = analysis.add_vowel_labels(out, session.schema)
-    result = normalization.normalize(out, session.schema, session.norm_method)
+    out = analysis.add_vowel_labels(out, session.schema, label_map=session.vowel_label_map)
+    if session.remove_outliers:
+        flagged = analysis.flag_outliers(out, session.schema, n_sd=session.outlier_sd)
+        out = flagged[~flagged["is_outlier"]].drop(columns=["is_outlier"])
+    result = normalization.normalize(
+        out, session.schema, session.norm_method, **(session.norm_params or {})
+    )
     return result.data, session.schema, result
 
 
@@ -201,11 +220,16 @@ class SchemaRequest(BaseModel):
 
 class NormalizationRequest(BaseModel):
     method: str
+    g_value: Optional[float] = None
+    corner_high: Optional[str] = None
+    corner_low: Optional[str] = None
 
 
 class DatasetRequest(BaseModel):
     selected_vowels: list[str] = []
     filters: dict[str, list] = {}
+    remove_outliers: bool = False
+    outlier_sd: float = 2.5
 
 
 class FigureCrossRequest(BaseModel):
@@ -221,6 +245,8 @@ class FigureSpaceRequest(BaseModel):
     color: str = "vowel_canon"
     show_tokens: bool = True
     vowels: Optional[list[str]] = None
+    mode: str = "scatter"  # scatter | contour | ellipse
+    max_points: int = 4000
     dark: bool = False
 
 
@@ -236,7 +262,30 @@ class SeparationRequest(BaseModel):
     group_by: Optional[str] = None
     dims: Optional[list[str]] = None
     engine: str = "builtin"  # "builtin" | "phonjsd"
+    bootstrap: int = 0  # >0 → JSD confidence intervals
+    permutations: int = 0  # >0 → Pillai permutation p-value
     dark: bool = False
+
+
+class TracksLoadRequest(BaseModel):
+    csv_path: str
+
+
+class TrajectoryFigureRequest(BaseModel):
+    kind: str = "space"  # "space" | "time"
+    value: str = "F1_norm"
+    group_by: Optional[str] = None
+    vowels: Optional[list[str]] = None
+    n_steps: int = 10
+    dark: bool = False
+
+
+class RecipeRequest(BaseModel):
+    recipe: dict
+
+
+class ProjectRequest(BaseModel):
+    name: str
 
 
 # --------------------------------------------------------------------------- #
@@ -260,7 +309,10 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
             "n_speakers": int(len(s.demographics)) if s.demographics is not None else 0,
             "norm_method": s.norm_method,
             "schema": s.schema.as_dict() if s.schema else {},
+            "tracks_loaded": s.tracks_df is not None,
+            "remove_outliers": s.remove_outliers,
         },
+        "browse_confined": BROWSE_ROOT is not None,
     }
 
 
@@ -315,6 +367,8 @@ def corpus_scan(req: ScanRequest, x_vowelchemy_session: Optional[str] = Header(d
 @app.post("/api/corpus/autodetect")
 def corpus_autodetect(req: AutodetectRequest):
     """Given a root directory, fuzzy-detect the audio/transcript/aligned folders."""
+    if not is_within_root(req.root_dir, BROWSE_ROOT):
+        raise HTTPException(status_code=403, detail="Path is outside the allowed root.")
     st = validate_location(req.root_dir)
     if not st.ok:
         raise HTTPException(status_code=400, detail=f"Root folder problem: {st.message}")
@@ -326,7 +380,7 @@ def browse(path: Optional[str] = None, exts: Optional[str] = None):
     """List sub-directories (and optional files) for the folder picker."""
     ext_list = [e for e in exts.split(",") if e] if exts else None
     try:
-        return list_directory(path, exts=ext_list)
+        return list_directory(path, exts=ext_list, root=BROWSE_ROOT)
     except (NotADirectoryError, FileNotFoundError, PermissionError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
@@ -457,8 +511,16 @@ def set_normalization(req: NormalizationRequest, x_vowelchemy_session: Optional[
     if req.method not in {m.key for m in normalization.available_methods()}:
         raise HTTPException(status_code=400, detail=f"Unknown method '{req.method}'.")
     s.norm_method = req.method
+    params: dict = {}
+    if req.g_value is not None:
+        params["g_value"] = req.g_value
+    if req.corner_high:
+        params["corner_high"] = req.corner_high
+    if req.corner_low:
+        params["corner_low"] = req.corner_low
+    s.norm_params = params
     _, _, result = prepared(s)
-    return {"method": req.method,
+    return {"method": req.method, "params": params,
             "units": result.units if result else "",
             "notes": result.notes if result else []}
 
@@ -489,7 +551,13 @@ def list_vowels(x_vowelchemy_session: Optional[str] = Header(default=None)):
     if df is None:
         raise HTTPException(status_code=400, detail="No data loaded.")
     vt = analysis.list_vowels(df, schema)
-    return [{"vowel": r.vowel, "label": r.label, "n": int(r.n)} for r in vt.itertuples()]
+    from .constants import ARPABET_VOWELS
+    out = []
+    for r in vt.itertuples():
+        lexset, keyword = ARPABET_VOWELS.get(r.vowel, ("", ""))
+        out.append({"vowel": r.vowel, "label": r.label, "keyword": keyword or r.vowel,
+                    "lexset": lexset, "n": int(r.n)})
+    return out
 
 
 @app.get("/api/grouping-columns")
@@ -509,6 +577,8 @@ def build_dataset(req: DatasetRequest, x_vowelchemy_session: Optional[str] = Hea
     s = session_for(x_vowelchemy_session)
     s.selected_vowels = req.selected_vowels
     s.filters = req.filters
+    s.remove_outliers = req.remove_outliers
+    s.outlier_sd = req.outlier_sd
     df, _, result = filtered(s)
     if df is None:
         raise HTTPException(status_code=400, detail="No data loaded.")
@@ -545,7 +615,8 @@ def figure_vowel_space(req: FigureSpaceRequest, x_vowelchemy_session: Optional[s
     df = _apply_vowels(df, schema, req.vowels)
     x = "F2_norm" if "F2_norm" in df.columns else schema.f2
     y = "F1_norm" if "F1_norm" in df.columns else schema.f1
-    fig = viz.vowel_space(df, x=x, y=y, color=req.color, show_tokens=req.show_tokens, dark=req.dark)
+    fig = viz.vowel_space(df, x=x, y=y, color=req.color, show_tokens=req.show_tokens,
+                          mode=req.mode, max_points=req.max_points, dark=req.dark)
     return fig_json(fig)
 
 
@@ -574,11 +645,16 @@ def figure_ridgeline(req: FigureRidgeRequest, x_vowelchemy_session: Optional[str
 def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     df, schema, _ = _require_explore(session_for(x_vowelchemy_session))
     sep = metrics.pairwise_separation(df, schema, vowels=req.vowels or None,
-                                      group_by=req.group_by, dimensions=req.dims)
+                                      group_by=req.group_by, dimensions=req.dims,
+                                      bootstrap=req.bootstrap, permutations=req.permutations)
     out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None, "phonjsd": None}
     if not sep.empty:
+        sep = sep.copy()
+        sep["verdict"] = sep["JSD"].map(jsd_verdict)
         show = [c for c in ["group_value", "vowel_a_label", "vowel_b_label", "n_a", "n_b",
-                            "JSD", "Pillai", "Bhattacharyya_overlap"] if c in sep.columns]
+                            "JSD", "JSD_lo", "JSD_hi", "Pillai", "Pillai_p",
+                            "Bhattacharyya_overlap", "verdict"]
+                if c in sep.columns and sep[c].notna().any()]
         out["builtin"] = df_payload(sep[show], limit=1000)
         order = natural_order(df, req.group_by)
         out["figure_bar"] = fig_json(viz.separation_bar(sep, group_order=order, dark=req.dark))
@@ -612,6 +688,197 @@ def separation_csv(x_vowelchemy_session: Optional[str] = Header(default=None)):
     sep = metrics.pairwise_separation(df, schema, vowels=s.selected_vowels or None)
     return Response(content=sep.to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=vowelchemy_separation.csv"})
+
+
+# --------------------------------------------------------------------------- #
+# Reproducible analysis recipe (R1)
+# --------------------------------------------------------------------------- #
+def build_recipe(s: Session) -> dict:
+    return {
+        "version": 1,
+        "corpus": {"audio_dir": s.audio_dir, "transcript_dir": s.transcript_dir,
+                   "aligned_dir": s.aligned_dir, "speakers_path": s.speakers_path},
+        "normalization": {"method": s.norm_method, "params": s.norm_params},
+        "outliers": {"remove": s.remove_outliers, "sd": s.outlier_sd},
+        "selected_vowels": s.selected_vowels,
+        "filters": s.filters,
+        "vowel_label_map": s.vowel_label_map,
+    }
+
+
+def apply_recipe(s: Session, r: dict) -> None:
+    c = r.get("corpus", {})
+    s.audio_dir = c.get("audio_dir", s.audio_dir) or ""
+    s.transcript_dir = c.get("transcript_dir", s.transcript_dir) or ""
+    s.aligned_dir = c.get("aligned_dir", s.aligned_dir) or ""
+    s.speakers_path = c.get("speakers_path", s.speakers_path) or ""
+    n = r.get("normalization", {})
+    if n.get("method"):
+        s.norm_method = n["method"]
+    s.norm_params = n.get("params") or {}
+    o = r.get("outliers", {})
+    s.remove_outliers = bool(o.get("remove", s.remove_outliers))
+    s.outlier_sd = float(o.get("sd", s.outlier_sd))
+    s.selected_vowels = r.get("selected_vowels", s.selected_vowels)
+    s.filters = r.get("filters", s.filters)
+    s.vowel_label_map = r.get("vowel_label_map", s.vowel_label_map)
+
+
+@app.get("/api/recipe")
+def get_recipe(x_vowelchemy_session: Optional[str] = Header(default=None)):
+    return build_recipe(session_for(x_vowelchemy_session))
+
+
+@app.post("/api/recipe")
+def post_recipe(req: RecipeRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    apply_recipe(s, req.recipe or {})
+    return {"applied": True, "recipe": build_recipe(s)}
+
+
+# --------------------------------------------------------------------------- #
+# Custom vowel-label map (R6) and glossary (U2)
+# --------------------------------------------------------------------------- #
+@app.post("/api/vowelmap/upload")
+async def upload_vowelmap(file: UploadFile = File(...),
+                          x_vowelchemy_session: Optional[str] = Header(default=None)):
+    from .constants import canonical_vowel
+
+    s = session_for(x_vowelchemy_session)
+    m = pd.read_csv(io.BytesIO(await file.read()))
+    if m.shape[1] < 2:
+        raise HTTPException(status_code=400, detail="Vowel map needs two columns: code,label.")
+    code_col, label_col = m.columns[0], m.columns[1]
+    s.vowel_label_map = {canonical_vowel(str(k)): str(v) for k, v in zip(m[code_col], m[label_col])}
+    return {"n": len(s.vowel_label_map)}
+
+
+@app.get("/api/glossary")
+def glossary():
+    return {"terms": GLOSSARY}
+
+
+# --------------------------------------------------------------------------- #
+# Persistent named projects (R10)
+# --------------------------------------------------------------------------- #
+@app.get("/api/projects")
+def api_list_projects():
+    return {"projects": projects.list_projects()}
+
+
+@app.post("/api/projects/save")
+def api_save_project(req: ProjectRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    path = projects.save_project(req.name, build_recipe(s), s.vowel_df, s.demographics, s.tracks_df)
+    return {"saved": str(path), "projects": projects.list_projects()}
+
+
+@app.post("/api/projects/load")
+def api_load_project(req: ProjectRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    try:
+        data = projects.load_project(req.name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    if data["vowel_df"] is not None:
+        s.vowel_df = data["vowel_df"]
+        s.schema = ColumnSchema.detect(data["vowel_df"])
+    if data["demographics"] is not None:
+        s.demographics = data["demographics"]
+    if data["tracks_df"] is not None:
+        s.tracks_df = data["tracks_df"]
+        s.tracks_schema = ColumnSchema.detect(data["tracks_df"])
+    apply_recipe(s, data["recipe"])  # applied last so vowels/filters/norm win
+    return {"loaded": req.name, "recipe": build_recipe(s),
+            "n_tokens": int(len(s.vowel_df)) if s.vowel_df is not None else 0}
+
+
+# --------------------------------------------------------------------------- #
+# Formant trajectories (R4)
+# --------------------------------------------------------------------------- #
+def tracks_prepared(s: Session):
+    if s.tracks_df is None or s.tracks_schema is None:
+        return None, None
+    out = s.tracks_df
+    if s.demographics is not None:
+        try:
+            out = analysis.join_demographics(out, s.demographics, s.tracks_schema)
+        except KeyError:
+            pass
+    out = analysis.add_vowel_labels(out, s.tracks_schema, label_map=s.vowel_label_map)
+    out = normalization.normalize(out, s.tracks_schema, s.norm_method, **(s.norm_params or {})).data
+    return out, s.tracks_schema
+
+
+@app.post("/api/tracks/demo")
+def load_tracks_demo(x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    tracks, speakers = sample_data.make_demo_tracks()
+    s.tracks_df = tracks
+    s.tracks_schema = ColumnSchema.detect(tracks)
+    if s.demographics is None:
+        s.demographics = speakers
+    return {"n_rows": int(len(tracks)),
+            "n_tokens": int(tracks[s.tracks_schema.token_id].nunique())}
+
+
+@app.post("/api/tracks/load")
+def load_tracks(req: TracksLoadRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    try:
+        df = pd.read_csv(Path(req.csv_path).expanduser())
+    except (OSError, pd.errors.ParserError) as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read tracks CSV: {exc}")
+    schema = ColumnSchema.detect(df)
+    if not trajectories.is_trajectory_data(df, schema):
+        raise HTTPException(
+            status_code=400,
+            detail="That CSV doesn't look like formant tracks — it needs a token-id column "
+                   "and a time column with multiple rows per token.",
+        )
+    s.tracks_df = df
+    s.tracks_schema = schema
+    return {"n_rows": int(len(df)), "n_tokens": int(df[schema.token_id].nunique())}
+
+
+@app.get("/api/tracks/vowels")
+def tracks_vowels(x_vowelchemy_session: Optional[str] = Header(default=None)):
+    from .constants import ARPABET_VOWELS, canonical_vowel
+
+    s = session_for(x_vowelchemy_session)
+    if s.tracks_df is None or s.tracks_schema is None:
+        return []
+    vcol = s.tracks_schema.require("vowel")
+    canon = s.tracks_df[vcol].map(canonical_vowel)
+    out = []
+    for v, n in canon.value_counts().items():
+        _lex, kw = ARPABET_VOWELS.get(v, ("", ""))
+        out.append({"vowel": v, "keyword": kw or v, "n": int(n)})
+    return out
+
+
+@app.post("/api/figure/trajectory")
+def figure_trajectory(req: TrajectoryFigureRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
+    s = session_for(x_vowelchemy_session)
+    df, schema = tracks_prepared(s)
+    if df is None:
+        raise HTTPException(status_code=400, detail="No trajectory (tracks) data loaded.")
+    track = trajectories.TrackSchema.detect(df, schema)
+    if track is None:
+        raise HTTPException(status_code=400, detail="Loaded data has no usable token/time columns.")
+    if req.vowels:
+        df = analysis.select_vowels(df, schema, req.vowels)
+    f1 = "F1_norm" if "F1_norm" in df.columns else schema.require("f1")
+    f2 = "F2_norm" if "F2_norm" in df.columns else schema.require("f2")
+    mean_df = trajectories.mean_trajectories(
+        df, schema, track, group_by=req.group_by, n_steps=req.n_steps, formants=[f1, f2]
+    )
+    if req.kind == "time":
+        val = req.value if req.value in mean_df.columns else f1
+        fig = viz.trajectory_time(mean_df, value=val, dark=req.dark)
+    else:
+        fig = viz.trajectory_space(mean_df, f1=f1, f2=f2, dark=req.dark)
+    return fig_json(fig)
 
 
 @app.get("/api/health")

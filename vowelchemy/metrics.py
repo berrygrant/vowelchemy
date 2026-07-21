@@ -48,6 +48,9 @@ class SeparationResult:
     jsd: float
     pillai: Optional[float] = None
     bhattacharyya_overlap: Optional[float] = None
+    jsd_lo: Optional[float] = None
+    jsd_hi: Optional[float] = None
+    pillai_p: Optional[float] = None
     group: Optional[str] = None
     group_value: Optional[object] = None
     method: str = "kde"
@@ -64,7 +67,10 @@ class SeparationResult:
             "n_a": self.n_a,
             "n_b": self.n_b,
             "JSD": self.jsd,
+            "JSD_lo": self.jsd_lo,
+            "JSD_hi": self.jsd_hi,
             "Pillai": self.pillai,
+            "Pillai_p": self.pillai_p,
             "Bhattacharyya_overlap": self.bhattacharyya_overlap,
             "method": self.method,
         }
@@ -207,6 +213,59 @@ def bhattacharyya_overlap(points_a: np.ndarray, points_b: np.ndarray) -> float:
     return float(np.clip(np.exp(-d_b), 0.0, 1.0))
 
 
+def _clean(x: np.ndarray) -> np.ndarray:
+    x = np.asarray(x, dtype=float)
+    return x[~np.isnan(x).any(axis=1)]
+
+
+def jsd_ci(
+    points_a: np.ndarray,
+    points_b: np.ndarray,
+    n_boot: int = 300,
+    ci: float = 0.95,
+    method: str = "kde",
+    grid_size: int = 60,
+    seed: int = 0,
+) -> tuple[float, float]:
+    """Percentile bootstrap confidence interval for JSD (resampling tokens)."""
+    a, b = _clean(points_a), _clean(points_b)
+    if len(a) < 5 or len(b) < 5:
+        return (float("nan"), float("nan"))
+    rng = np.random.RandomState(seed)
+    vals: list[float] = []
+    for _ in range(n_boot):
+        ra = a[rng.randint(0, len(a), len(a))]
+        rb = b[rng.randint(0, len(b), len(b))]
+        v = jensen_shannon_divergence(ra, rb, method=method, grid_size=grid_size)
+        if not np.isnan(v):
+            vals.append(v)
+    if not vals:
+        return (float("nan"), float("nan"))
+    lo = float(np.percentile(vals, 100 * (1 - ci) / 2))
+    hi = float(np.percentile(vals, 100 * (1 + ci) / 2))
+    return (lo, hi)
+
+
+def pillai_p(points_a: np.ndarray, points_b: np.ndarray, n_perm: int = 1000, seed: int = 0) -> float:
+    """Permutation p-value for the two-group Pillai trace (label shuffling)."""
+    a, b = _clean(points_a), _clean(points_b)
+    if len(a) < 3 or len(b) < 3:
+        return float("nan")
+    observed = pillai_score(a, b)
+    if np.isnan(observed):
+        return float("nan")
+    combined = np.vstack([a, b])
+    na = len(a)
+    rng = np.random.RandomState(seed)
+    count = 0
+    for _ in range(n_perm):
+        perm = rng.permutation(len(combined))
+        v = pillai_score(combined[perm[:na]], combined[perm[na:]])
+        if not np.isnan(v) and v >= observed:
+            count += 1
+    return float((count + 1) / (n_perm + 1))
+
+
 # --------------------------------------------------------------------------- #
 # High-level: pairwise separation over selected vowels, optionally by group
 # --------------------------------------------------------------------------- #
@@ -228,8 +287,14 @@ def pair_separation(
     method: str = "kde",
     group: Optional[str] = None,
     group_value: Optional[object] = None,
+    bootstrap: int = 0,
+    permutations: int = 0,
 ) -> SeparationResult:
-    """Compute JSD + companions for one vowel pair on one (sub)frame."""
+    """Compute JSD + companions for one vowel pair on one (sub)frame.
+
+    ``bootstrap`` > 0 adds a percentile CI for JSD; ``permutations`` > 0 adds a
+    permutation p-value for Pillai.
+    """
     dims = _resolve_dimensions(df, dimensions)
     vowel_col = "vowel_canon" if "vowel_canon" in df.columns else schema.require("vowel")
     canon = df[vowel_col].map(canonical_vowel) if vowel_col != "vowel_canon" else df[vowel_col]
@@ -242,6 +307,11 @@ def pair_separation(
     jsd = jensen_shannon_divergence(a, b, method=method) if dims else float("nan")
     pillai = pillai_score(a, b) if dims else float("nan")
     bhatt = bhattacharyya_overlap(a, b) if dims else float("nan")
+    jsd_lo = jsd_hi = pil_p = None
+    if dims and bootstrap > 0 and not np.isnan(jsd):
+        jsd_lo, jsd_hi = jsd_ci(a, b, n_boot=bootstrap, method=method)
+    if dims and permutations > 0 and not np.isnan(pillai):
+        pil_p = pillai_p(a, b, n_perm=permutations)
     return SeparationResult(
         vowel_a=canonical_vowel(vowel_a),
         vowel_b=canonical_vowel(vowel_b),
@@ -250,6 +320,9 @@ def pair_separation(
         jsd=jsd,
         pillai=pillai,
         bhattacharyya_overlap=bhatt,
+        jsd_lo=jsd_lo,
+        jsd_hi=jsd_hi,
+        pillai_p=pil_p,
         group=group,
         group_value=group_value,
         method=method,
@@ -266,12 +339,15 @@ def pairwise_separation(
     dimensions: Optional[Sequence[str]] = None,
     method: str = "kde",
     min_tokens: int = 5,
+    bootstrap: int = 0,
+    permutations: int = 0,
 ) -> pd.DataFrame:
     """Separation metrics for every vowel pair, optionally within each group.
 
     This directly answers "how separated are these vowels, and does it differ
     across Age Group / Sex?".  Pass a single grouping column via ``group_by``
-    to get one row per (group level × vowel pair).
+    to get one row per (group level × vowel pair).  ``bootstrap``/``permutations``
+    add JSD CIs and a Pillai permutation p-value.
     """
     vowel_col = "vowel_canon" if "vowel_canon" in df.columns else schema.require("vowel")
     canon_all = (
@@ -304,6 +380,7 @@ def pairwise_separation(
                 sub, schema, va, vb,
                 dimensions=dimensions, method=method,
                 group=group_by, group_value=gval,
+                bootstrap=bootstrap, permutations=permutations,
             )
             row = res.as_row()
             row["vowel_a_label"] = vowel_display_label(va)

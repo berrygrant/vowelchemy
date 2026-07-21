@@ -12,7 +12,10 @@ export interface Status {
     n_speakers: number
     norm_method: string
     schema: Record<string, string>
+    tracks_loaded?: boolean
+    remove_outliers?: boolean
   }
+  browse_confined?: boolean
 }
 
 export interface TablePayload {
@@ -26,7 +29,21 @@ export interface TablePayload {
 export interface VowelInfo {
   vowel: string
   label: string
+  keyword?: string
+  lexset?: string
   n: number
+}
+
+export interface GlossaryTerm {
+  term: string
+  definition: string
+}
+
+export interface Project {
+  name: string
+  has_vowels: boolean
+  has_tracks: boolean
+  modified: number
 }
 
 export interface NormMethod {

@@ -615,3 +615,95 @@ input[type='file'] {
     margin-left: 100%;
   }
 }
+
+/* Glossary */
+.glossary-item {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.glossary-item:last-child {
+  border-bottom: none;
+}
+.glossary-term {
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+/* Sidebar session panel */
+.side-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.file-btn {
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+.file-btn input[type='file'] {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+}
+.side-project-save {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.side-project-save input {
+  flex: 1;
+  min-width: 0;
+}
+.side-projects {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+.project-row {
+  text-align: left;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.project-row:hover {
+  border-color: var(--primary);
+}
+.side-help {
+  width: 100%;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+/* Chart export toolbar */
+.export-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+.export-scale {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.export-scale select {
+  width: auto;
+  padding: 3px 6px;
+}
+
+/* Separation stat toggles */
+.stat-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: center;
+  margin: 8px 0;
+}
