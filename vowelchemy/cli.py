@@ -1,9 +1,9 @@
 """Command-line interface for vowelchemy.
 
 Mostly a convenience layer over the library so the pipeline is scriptable and
-the Streamlit app is one command away::
+the web app is one command away::
 
-    vowelchemy app                       # launch the interactive app
+    vowelchemy app                       # launch the API + React app
     vowelchemy demo ./demo               # write a synthetic corpus dataset
     vowelchemy discover ./audio --transcripts ./texts
     vowelchemy normalize vowels.csv -m lobanov -s speakers.csv -o out.csv
@@ -21,13 +21,20 @@ def _cmd_app(args: argparse.Namespace) -> int:
     import importlib.util
     import subprocess
 
-    app_path = Path(__file__).with_name("app.py")
-    if importlib.util.find_spec("streamlit") is None:
-        print("Streamlit is not installed. Install with: pip install streamlit", file=sys.stderr)
+    if importlib.util.find_spec("uvicorn") is None:
+        print("uvicorn is not installed. Install with: pip install -e .", file=sys.stderr)
         return 1
-    cmd = [sys.executable, "-m", "streamlit", "run", str(app_path)]
-    if args.port:
-        cmd += ["--server.port", str(args.port)]
+    port = args.port or 8000
+    dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    if not dist.is_dir():
+        print("Note: the React front-end has not been built yet. Serving the API only.\n"
+              "      Build it with:  cd frontend && npm install && npm run build\n"
+              "      or run the dev server:  cd frontend && npm run dev\n", file=sys.stderr)
+    print(f"Vowelchemy running at http://127.0.0.1:{port}  (API under /api)")
+    cmd = [sys.executable, "-m", "uvicorn", "vowelchemy.api:app",
+           "--host", "127.0.0.1", "--port", str(port)]
+    if args.reload:
+        cmd.append("--reload")
     return subprocess.call(cmd)
 
 
@@ -112,8 +119,9 @@ def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vowelchemy", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="command", required=True)
 
-    a = sub.add_parser("app", help="launch the interactive Streamlit app")
+    a = sub.add_parser("app", help="launch the API + React app (uvicorn)")
     a.add_argument("--port", type=int, default=None)
+    a.add_argument("--reload", action="store_true", help="auto-reload (development)")
     a.set_defaults(func=_cmd_app)
 
     d = sub.add_parser("demo", help="write a synthetic demo dataset")

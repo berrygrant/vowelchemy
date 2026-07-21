@@ -28,19 +28,28 @@ skip straight ahead.
 
 ## Install
 
-### 1. The app (analysis half — everything except alignment/extraction)
+### 1. The app (Python/FastAPI backend + React front-end)
+
+Vowelchemy is a **FastAPI** backend that exposes the analysis library, plus a
+**React** (Vite + TypeScript) front-end that renders server-produced Plotly
+charts. Install the backend, build the UI once, then launch:
 
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
-pip install -e .
-vowelchemy app          # opens the Streamlit app in your browser
+pip install -e .                                     # backend (pandas, scipy, plotly, fastapi)
+cd frontend && npm install && npm run build && cd ..  # build the UI (needs Node ≥ 18)
+vowelchemy app                                       # serves API + UI at http://127.0.0.1:8000
 ```
 
-This pulls in only lightweight scientific-Python packages (pandas, numpy,
-scipy, plotly, streamlit). You can explore the entire analysis, visualization,
-and separation-metrics workflow immediately using **Demo mode** (a button in the
-sidebar) — no corpus, aligner, or R required.
+The backend pulls in only lightweight scientific-Python packages plus FastAPI.
+You can explore the entire analysis, visualization, and separation-metrics
+workflow immediately using **Demo mode** (a button in the sidebar) — no corpus,
+aligner, or R required.
+
+> **Developing the UI?** Run the backend with `vowelchemy app` and, in another
+> terminal, `cd frontend && npm run dev` for a hot-reloading dev server at
+> `http://localhost:5173` that proxies `/api` to the backend.
 
 ### 2. The aligner and extractor (acquisition half)
 
@@ -192,7 +201,7 @@ keywords (`BEET`) — all resolve to the same category.
 
 ## Python API
 
-Everything the app does is available as a library (no Streamlit import required):
+Everything the app does is available as a library (no web server required):
 
 ```python
 from vowelchemy import analysis, normalization, metrics
@@ -226,38 +235,54 @@ audio, so a fast mount (or staging locally) is recommended for large corpora.
 
 ---
 
-## Project layout
+## Architecture & project layout
+
+Vowelchemy is a **Python library** wrapped by a **FastAPI** backend, driven by a
+**React** front-end. The library holds all the real logic (and is fully usable on
+its own); the backend is thin glue that also produces the Plotly charts as JSON;
+React renders them with plotly.js and never re-implements chart logic.
 
 ```
-vowelchemy/
-  app.py            # Streamlit wizard (the UI)
-  cli.py            # command-line entry point
-  corpus.py         # discovery, pairing, TextGrid/alignment detection
-  alignment.py      # MFA orchestration + corpus staging
-  extraction.py     # new-fave orchestration
-  normalization.py  # Lobanov, Labov-ANAE, Nearey, Bark, Watt–Fabricius, …
-  schema.py         # column auto-detection
-  analysis.py       # join / select / filter / group / summarize
-  metrics.py        # built-in JSD, Pillai, Bhattacharyya
-  phonjsd.py        # bridge to the phonJSD R package
-  visualization.py  # Plotly figures (distribution-first)
-  sample_data.py    # synthetic demo corpus
-  constants.py      # vowel identifiers (ARPABET ↔ lexical set ↔ keyword)
-examples/           # ready-to-use demo CSVs
-tests/              # pytest suite
+vowelchemy/           # Python library + API (pip installable)
+  api.py              # FastAPI backend — exposes the library over JSON
+  cli.py              # command-line entry point (`vowelchemy …`)
+  corpus.py           # discovery, pairing, TextGrid/alignment detection
+  alignment.py        # MFA orchestration + corpus staging
+  extraction.py       # new-fave orchestration
+  normalization.py    # Lobanov, Labov-ANAE, Nearey, Bark, Watt–Fabricius, …
+  schema.py           # column auto-detection
+  analysis.py         # join / select / filter / group / summarize
+  metrics.py          # built-in JSD, Pillai, Bhattacharyya
+  phonjsd.py          # bridge to the phonJSD R package
+  visualization.py    # Plotly figures (distribution-first)
+  sample_data.py      # synthetic demo corpus
+  constants.py        # vowel identifiers (ARPABET ↔ lexical set ↔ keyword)
+frontend/             # React + Vite + TypeScript single-page app
+  src/App.tsx         # shell + stage routing
+  src/stages/*.tsx    # the six pipeline stages
+  src/components/*    # sidebar, PlotlyChart, DataTable, form controls
+  src/api.ts          # typed fetch client (session-aware)
+examples/             # ready-to-use demo CSVs
+tests/                # pytest suite (library + API)
 ```
 
 ## Development
 
 ```bash
-pip install -e ".[dev]"
-pytest
+pip install -e ".[dev]"      # backend + test deps
+pytest                        # library + API tests
+
+cd frontend
+npm install
+npm run dev                   # hot-reloading UI at http://localhost:5173
+npm run build                 # production build served by `vowelchemy app`
 ```
 
-The tests cover the schema, normalization math (Lobanov, Labov-ANAE, Nearey,
-Bark, Watt–Fabricius), analysis, the built-in separation metrics, corpus
-discovery, the phonJSD bridge, and the extraction command builder. The Streamlit
-app is exercised headlessly with `streamlit.testing`.
+The Python tests cover the schema, normalization math (Lobanov, Labov-ANAE,
+Nearey, Bark, Watt–Fabricius), analysis, the built-in separation metrics, corpus
+discovery, the phonJSD bridge, the extraction command builder, and every FastAPI
+endpoint (`fastapi.testclient`). The React app type-checks with `tsc` on each
+build.
 
 > **Note on tool CLIs.** MFA and new-fave evolve their command-line flags
 > between releases. Vowelchemy targets current MFA 3.x and new-fave interfaces
