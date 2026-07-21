@@ -123,3 +123,47 @@ def test_corpus_autodetect_and_browse(client, tmp_path):
 def test_align_requires_corpus_and_jobs_404(client):
     assert client.post("/api/align", json={}, headers=H("s-noalign")).status_code == 400
     assert client.get("/api/jobs/unknown-id").status_code == 404
+
+
+def test_separation_bootstrap_and_verdict(client):
+    h = H("s-boot")
+    client.post("/api/demo", headers=h)
+    res = client.post(
+        "/api/separation",
+        json={"vowels": ["AA", "AO"], "group_by": "Age Group", "engine": "builtin",
+              "bootstrap": 40, "permutations": 100},
+        headers=h,
+    ).json()
+    cols = res["builtin"]["columns"]
+    assert "JSD_lo" in cols and "Pillai_p" in cols and "verdict" in cols
+
+
+def test_recipe_round_trip(client):
+    h = H("s-recipe")
+    client.post("/api/demo", headers=h)
+    client.post("/api/recipe",
+                json={"recipe": {"normalization": {"method": "nearey"}, "selected_vowels": ["IY"]}},
+                headers=h)
+    r = client.get("/api/recipe", headers=h).json()
+    assert r["normalization"]["method"] == "nearey"
+    assert r["selected_vowels"] == ["IY"]
+
+
+def test_tracks_demo_and_trajectory_figure(client):
+    h = H("s-traj")
+    td = client.post("/api/tracks/demo", headers=h).json()
+    assert td["n_tokens"] > 0
+    fig = client.post("/api/figure/trajectory",
+                      json={"kind": "space", "vowels": ["AY", "AW"]}, headers=h).json()
+    assert len(fig["data"]) > 0
+
+
+def test_outlier_removal_and_keywords_and_glossary(client):
+    h = H("s-misc")
+    client.post("/api/demo", headers=h)
+    d0 = client.post("/api/dataset", json={"remove_outliers": False}, headers=h).json()
+    d1 = client.post("/api/dataset", json={"remove_outliers": True, "outlier_sd": 2.0}, headers=h).json()
+    assert d1["n_total"] < d0["n_total"]
+    vowels = client.get("/api/vowels", headers=h).json()
+    assert any(x["vowel"] == "IY" and x["keyword"] == "BEET" for x in vowels)
+    assert len(client.get("/api/glossary").json()["terms"]) > 5

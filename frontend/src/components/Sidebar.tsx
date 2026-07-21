@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { api } from '../api'
-import type { Stage, Status, ToolInfo } from '../types'
+import type { Ctx, Stage, Status, ToolInfo } from '../types'
+import { SessionPanel } from './SessionPanel'
+import { GlossaryDrawer } from './GlossaryDrawer'
 
 const STAGES: { id: Stage; n: number; label: string }[] = [
   { id: 'corpus', n: 1, label: 'Corpus' },
@@ -27,13 +29,16 @@ export function Sidebar({
   setStage,
   status,
   refresh,
+  ctx,
 }: {
   stage: Stage
   setStage: (s: Stage) => void
   status: Status | null
   refresh: () => Promise<void>
+  ctx: Ctx
 }) {
   const [busy, setBusy] = useState(false)
+  const [showGlossary, setShowGlossary] = useState(false)
 
   const loadDemo = async () => {
     setBusy(true)
@@ -96,6 +101,13 @@ export function Sidebar({
       <p className="brand-sub small">
         Demo mode loads a synthetic corpus so you can explore stages 4–6 without MFA/new-fave.
       </p>
+
+      <SessionPanel ctx={ctx} />
+
+      <button className="btn btn-small side-help" onClick={() => setShowGlossary(true)}>
+        ❔ Glossary &amp; help
+      </button>
+      {showGlossary && <GlossaryDrawer onClose={() => setShowGlossary(false)} />}
     </aside>
   )
 }

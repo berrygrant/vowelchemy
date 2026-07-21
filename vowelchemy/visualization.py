@@ -138,12 +138,18 @@ def vowel_space(
     dark: bool = False,
     title: Optional[str] = None,
     category_order: Optional[Sequence[str]] = None,
+    mode: str = "scatter",
+    max_points: int = 4000,
 ) -> go.Figure:
     """Canonical vowel plot: F2 on x (reversed), F1 on y (reversed).
 
-    Tokens are drawn faintly; each category gets a covariance ellipse and a
-    bold centroid label so identity reads from position + label, with colour as
-    a supporting cue.
+    ``mode`` selects how tokens are shown, which matters for large corpora:
+
+    * ``"scatter"`` — faint per-token markers (thinned to ``max_points`` total),
+      plus ellipse + centroid label;
+    * ``"contour"`` — a 2-D density contour per category (no per-token markers),
+      ideal when tens of thousands of tokens would overplot;
+    * ``"ellipse"`` — ellipse + centroid only, the lightest summary.
     """
     fig = go.Figure()
     cats = list(dict.fromkeys(df[color].dropna().astype(str)))
@@ -153,6 +159,8 @@ def vowel_space(
         else sorted(cats)
     )
     cmap = stable_color_map(cats, dark=dark, order=order)
+    per_cat_cap = max(200, max_points // max(len(order), 1))
+    thinned_total = 0
 
     for cat in order:
         sub = df[df[color].astype(str) == cat]
@@ -164,17 +172,27 @@ def vowel_space(
             if color in ("vowel_canon", "vowel")
             else cat
         )
-        if show_tokens:
+        if mode == "contour":
+            fig.add_trace(
+                go.Histogram2dContour(
+                    x=sub[x], y=sub[y], showscale=False, ncontours=6,
+                    colorscale=[[0.0, _rgba(col, 0.0)], [1.0, _rgba(col, 0.85)]],
+                    line=dict(width=0.4), name=str(cat), legendgroup=str(cat),
+                    hoverinfo="skip", showlegend=True,
+                )
+            )
+        elif show_tokens and mode == "scatter":
+            pts = sub if len(sub) <= per_cat_cap else sub.sample(per_cat_cap, random_state=0)
+            thinned_total += len(sub) - len(pts)
             fig.add_trace(
                 go.Scattergl(
-                    x=sub[x], y=sub[y], mode="markers",
-                    marker=dict(size=5, color=col, opacity=0.28,
-                                line=dict(width=0)),
+                    x=pts[x], y=pts[y], mode="markers",
+                    marker=dict(size=5, color=col, opacity=0.28, line=dict(width=0)),
                     name=str(cat), legendgroup=str(cat),
                     hovertemplate=f"{label}<br>{x}: %{{x:.3f}}<br>{y}: %{{y:.3f}}<extra></extra>",
                 )
             )
-        if ellipses:
+        if ellipses and mode != "contour":
             ell = confidence_ellipse(sub[x].to_numpy(), sub[y].to_numpy(), n_std=n_std)
             if ell is not None:
                 fig.add_trace(
@@ -182,7 +200,8 @@ def vowel_space(
                         x=ell[0], y=ell[1], mode="lines",
                         line=dict(color=col, width=2),
                         fill="toself", fillcolor=_rgba(col, 0.08),
-                        name=str(cat), legendgroup=str(cat), showlegend=not show_tokens,
+                        name=str(cat), legendgroup=str(cat),
+                        showlegend=not (show_tokens and mode == "scatter"),
                         hoverinfo="skip",
                     )
                 )
@@ -198,13 +217,13 @@ def vowel_space(
             )
         )
 
+    ttl = title or "Vowel space"
+    if thinned_total > 0:
+        ttl += f"  (thinned {thinned_total:,} tokens for display)"
     fig.update_xaxes(autorange="reversed", title=_axis_title(x))
     fig.update_yaxes(autorange="reversed", title=_axis_title(y))
-    fig.update_layout(
-        title=title or "Vowel space",
-        legend_title_text="Vowel",
-        showlegend=show_tokens,
-    )
+    fig.update_layout(title=ttl, legend_title_text="Vowel",
+                      showlegend=(mode == "contour") or (show_tokens and mode == "scatter"))
     return _apply_theme(fig, dark)
 
 
@@ -222,14 +241,20 @@ def formant_cross(
     x_order: Optional[Sequence[str]] = None,
     color_order: Optional[Sequence[str]] = None,
     title: Optional[str] = None,
+    max_points: int = 8000,
 ) -> go.Figure:
     """Distribution of ``formant`` across ``x`` (optionally split by ``color``).
 
     This is the user's *BET/BEET F1 by Age Group* view.  ``kind`` is
     ``"violin"`` (default; box + all points inside), ``"box"``, or ``"strip"``.
-    Violins expose modality and skew that a bar-of-means would hide.
+    Violins expose modality and skew that a bar-of-means would hide.  For very
+    large corpora the frame is thinned to ``max_points`` rows for rendering.
     """
     plot_df = df.copy()
+    thinned = 0
+    if len(plot_df) > max_points:
+        thinned = len(plot_df) - max_points
+        plot_df = plot_df.sample(max_points, random_state=0)
     cat_orders: dict[str, Sequence[str]] = {}
     if x_order:
         cat_orders[x] = list(x_order)
@@ -259,12 +284,12 @@ def formant_cross(
         )
         fig.update_layout(violinmode="group")
 
+    ttl = title or f"{_axis_title(formant)} by {x}"
+    if thinned:
+        ttl += f"  (thinned {thinned:,} tokens for display)"
     fig.update_yaxes(title=_axis_title(formant))
     fig.update_xaxes(title=x)
-    fig.update_layout(
-        title=title or f"{_axis_title(formant)} by {x}",
-        legend_title_text=color if color else "",
-    )
+    fig.update_layout(title=ttl, legend_title_text=color if color else "")
     return _apply_theme(fig, dark)
 
 
@@ -347,10 +372,18 @@ def separation_bar(
     cat_orders = {}
     if group_order and x == "group_value":
         cat_orders[x] = list(group_order)
+    hover = [c for c in ("n_a", "n_b", "Pillai", "Bhattacharyya_overlap") if c in plot_df.columns]
+    # Draw bootstrap CIs as error bars when present.
+    error_kw = {}
+    if metric == "JSD" and {"JSD_lo", "JSD_hi"}.issubset(plot_df.columns) and plot_df["JSD_hi"].notna().any():
+        plot_df = plot_df.assign(
+            _eplus=(plot_df["JSD_hi"] - plot_df[metric]).clip(lower=0),
+            _eminus=(plot_df[metric] - plot_df["JSD_lo"]).clip(lower=0),
+        )
+        error_kw = {"error_y": "_eplus", "error_y_minus": "_eminus"}
     fig = px.bar(
         plot_df, x=x, y=metric, color="pair", barmode="group",
-        category_orders=cat_orders, color_discrete_map=cmap,
-        hover_data=["n_a", "n_b", "Pillai", "Bhattacharyya_overlap"],
+        category_orders=cat_orders, color_discrete_map=cmap, hover_data=hover, **error_kw,
     )
     fig.update_layout(title=title or f"{metric} separation", legend_title_text="Vowel pair")
     fig.update_yaxes(title=metric, range=[0, 1] if metric in ("JSD", "Pillai") else None)
@@ -385,6 +418,91 @@ def separation_matrix(
     suffix = f" — {group_value}" if group_value is not None else ""
     fig.update_layout(title=title or f"{metric} separation matrix{suffix}")
     return _apply_theme(fig, dark, height=480)
+
+
+# --------------------------------------------------------------------------- #
+# Trajectories
+# --------------------------------------------------------------------------- #
+def trajectory_space(
+    mean_df: pd.DataFrame,
+    f1: str = "F1_norm",
+    f2: str = "F2_norm",
+    dark: bool = False,
+    title: Optional[str] = None,
+    category_order: Optional[Sequence[str]] = None,
+) -> go.Figure:
+    """Mean vowel trajectories in F2×F1 space (a line + arrow per vowel)."""
+    fig = go.Figure()
+    cats = list(dict.fromkeys(mean_df["vowel"].astype(str)))
+    order = category_order or (
+        [v for v in _VOWEL_ORDER if v in cats] + [c for c in cats if c not in _VOWEL_ORDER]
+    )
+    cmap = stable_color_map(cats, dark=dark, order=order)
+    for cat in order:
+        sub = mean_df[mean_df["vowel"].astype(str) == cat].sort_values("step")
+        if len(sub) < 2:
+            continue
+        col = cmap[cat]
+        xs, ys = sub[f2].to_numpy(), sub[f1].to_numpy()
+        label = vowel_display_label(cat).split(" ")[0]
+        fig.add_trace(
+            go.Scatter(
+                x=xs, y=ys, mode="lines+markers",
+                line=dict(color=col, width=2), marker=dict(size=4, color=col),
+                name=label, legendgroup=cat,
+                hovertemplate=f"{label}<br>{f2}: %{{x:.3f}}<br>{f1}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+        fig.add_annotation(
+            x=xs[-1], y=ys[-1], ax=xs[-2], ay=ys[-2],
+            xref="x", yref="y", axref="x", ayref="y",
+            showarrow=True, arrowhead=2, arrowsize=1.3, arrowwidth=2, arrowcolor=col, text="",
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=[xs[0]], y=[ys[0]], mode="text", text=[label],
+                textposition="middle left", textfont=dict(color=_INK[_mode(dark)], size=13),
+                showlegend=False, legendgroup=cat, hoverinfo="skip",
+            )
+        )
+    fig.update_xaxes(autorange="reversed", title=_axis_title(f2))
+    fig.update_yaxes(autorange="reversed", title=_axis_title(f1))
+    fig.update_layout(title=title or "Mean vowel trajectories", legend_title_text="Vowel")
+    return _apply_theme(fig, dark)
+
+
+def trajectory_time(
+    mean_df: pd.DataFrame,
+    value: str = "F1_norm",
+    dark: bool = False,
+    title: Optional[str] = None,
+    category_order: Optional[Sequence[str]] = None,
+) -> go.Figure:
+    """Mean formant value over normalized time, one line per vowel."""
+    fig = go.Figure()
+    cats = list(dict.fromkeys(mean_df["vowel"].astype(str)))
+    order = category_order or (
+        [v for v in _VOWEL_ORDER if v in cats] + [c for c in cats if c not in _VOWEL_ORDER]
+    )
+    cmap = stable_color_map(cats, dark=dark, order=order)
+    n_steps = int(mean_df["step"].max()) + 1 if not mean_df.empty else 1
+    for cat in order:
+        sub = mean_df[mean_df["vowel"].astype(str) == cat].sort_values("step")
+        if sub.empty:
+            continue
+        label = vowel_display_label(cat).split(" ")[0]
+        fig.add_trace(
+            go.Scatter(
+                x=sub["step"] / max(n_steps - 1, 1), y=sub[value], mode="lines+markers",
+                line=dict(color=cmap[cat], width=2), marker=dict(size=4),
+                name=label, legendgroup=cat,
+                hovertemplate=f"{label}<br>time: %{{x:.2f}}<br>{value}: %{{y:.3f}}<extra></extra>",
+            )
+        )
+    fig.update_xaxes(title="normalized time (0 → 1)")
+    fig.update_yaxes(title=_axis_title(value))
+    fig.update_layout(title=title or f"{_axis_title(value)} over time", legend_title_text="Vowel")
+    return _apply_theme(fig, dark)
 
 
 # --------------------------------------------------------------------------- #

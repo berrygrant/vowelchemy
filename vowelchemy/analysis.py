@@ -83,12 +83,23 @@ def join_demographics(
     return merged
 
 
-def add_vowel_labels(df: pd.DataFrame, schema: ColumnSchema) -> pd.DataFrame:
-    """Add ``vowel_canon`` (bare ARPABET) and ``vowel_label`` (friendly) columns."""
+def add_vowel_labels(
+    df: pd.DataFrame, schema: ColumnSchema, label_map: Optional[Mapping[str, str]] = None
+) -> pd.DataFrame:
+    """Add ``vowel_canon`` (bare ARPABET) and ``vowel_label`` (friendly) columns.
+
+    ``label_map`` (canonical code → display label) overrides the built-in
+    English keyword labels, so IPA / non-English vowel coding can be labelled.
+    """
     vowel = schema.require("vowel")
     out = df.copy()
     out["vowel_canon"] = out[vowel].map(canonical_vowel)
-    out["vowel_label"] = out["vowel_canon"].map(vowel_display_label)
+    if label_map:
+        out["vowel_label"] = out["vowel_canon"].map(
+            lambda v: label_map.get(v, vowel_display_label(v))
+        )
+    else:
+        out["vowel_label"] = out["vowel_canon"].map(vowel_display_label)
     return out
 
 

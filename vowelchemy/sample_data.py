@@ -139,6 +139,69 @@ def make_demo_dataset(
     return tokens, speakers
 
 
+# Trajectory (start → end) targets in Hz: diphthongs move, monophthongs are flat.
+_TRAJ_TARGETS: dict[str, tuple[tuple[float, float], tuple[float, float]]] = {
+    "AY": ((760, 1250), (430, 1900)),   # PRICE: low → high-front
+    "AW": ((760, 1300), (500, 940)),    # MOUTH: low → high-back (rounding)
+    "EY": ((520, 1900), (380, 2250)),   # FACE
+    "OW": ((520, 1050), (430, 1160)),   # GOAT
+    "OY": ((520, 900), (400, 1950)),    # CHOICE
+    "IY": ((310, 2280), (300, 2320)),   # ~monophthong
+    "EH": ((600, 1840), (600, 1860)),   # ~monophthong
+    "AA": ((760, 1160), (760, 1150)),   # ~monophthong
+}
+_TRAJ_WORDS = {
+    "AY": ["bite", "ride", "time"], "AW": ["bout", "loud", "how"],
+    "EY": ["bait", "face", "day"], "OW": ["boat", "goat", "know"],
+    "OY": ["boy", "coin", "toy"], "IY": ["beet", "seat", "keep"],
+    "EH": ["bet", "set", "bed"], "AA": ["bot", "cot", "pod"],
+}
+
+
+def make_vowel_tracks(
+    speakers: pd.DataFrame,
+    tokens_per_vowel: int = 8,
+    n_slices: int = 11,
+    seed: int = 7,
+) -> pd.DataFrame:
+    """Generate a long-format formant *tracks* table (many rows per token)."""
+    rng = np.random.RandomState(seed + 2)
+    records = []
+    tok = 0
+    frac = np.linspace(0.0, 1.0, n_slices)
+    for _, spk in speakers.iterrows():
+        vtl = _SEX_FORMANT_SCALE.get(spk["Sex"], 1.0) * rng.normal(1.0, 0.02)
+        for vowel, ((f1a, f2a), (f1b, f2b)) in _TRAJ_TARGETS.items():
+            for _ in range(tokens_per_vowel):
+                tok += 1
+                word = _TRAJ_WORDS[vowel][rng.randint(len(_TRAJ_WORDS[vowel]))]
+                jitter1 = rng.normal(1.0, 0.05)
+                jitter2 = rng.normal(1.0, 0.04)
+                for k, p in enumerate(frac):
+                    f1 = (f1a + (f1b - f1a) * p) * vtl * jitter1 * rng.normal(1.0, 0.03)
+                    f2 = (f2a + (f2b - f2a) * p) * vtl * jitter2 * rng.normal(1.0, 0.03)
+                    records.append(
+                        {
+                            "id": f"k{tok:05d}",
+                            "speaker": spk["speaker"],
+                            "vowel": f"{vowel}1",
+                            "word": word,
+                            "prop_time": round(float(p), 3),
+                            "F1": round(float(f1), 1),
+                            "F2": round(float(f2), 1),
+                            "F3": round(float(2550 * vtl), 1),
+                        }
+                    )
+    return pd.DataFrame(records)
+
+
+def make_demo_tracks(n_per_cell: int = 3, seed: int = 7) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Return ``(tracks, speakers)`` — a trajectory demo with real diphthongs."""
+    speakers = make_speakers(n_per_cell=n_per_cell, seed=seed)
+    tracks = make_vowel_tracks(speakers, seed=seed)
+    return tracks, speakers
+
+
 def write_demo_dataset(out_dir: str | Path, seed: int = 7) -> dict[str, Path]:
     """Write ``demo_vowels.csv`` and ``demo_speakers.csv`` to ``out_dir``."""
     out_dir = Path(out_dir)

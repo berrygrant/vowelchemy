@@ -115,6 +115,72 @@ def _cmd_separation(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_setup(args: argparse.Namespace) -> int:
+    """Build the React front-end so `vowelchemy app` can serve it (needs Node)."""
+    import shutil
+    import subprocess
+
+    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    if not frontend.is_dir():
+        print("frontend/ directory not found next to the package.", file=sys.stderr)
+        return 1
+    if (frontend / "dist").is_dir() and not args.force:
+        print("UI already built (frontend/dist). Use --force to rebuild.")
+        return 0
+    npm = shutil.which("npm")
+    if not npm:
+        print("npm/Node not found. Install Node >= 18 and re-run, or use the Docker image "
+              "(docker build -t vowelchemy .).", file=sys.stderr)
+        return 1
+    print("Installing front-end dependencies…")
+    if subprocess.call([npm, "install"], cwd=str(frontend)) != 0:
+        return 1
+    print("Building the UI…")
+    if subprocess.call([npm, "run", "build"], cwd=str(frontend)) != 0:
+        return 1
+    print("Done. Launch with:  vowelchemy app")
+    return 0
+
+
+def _cmd_align(args: argparse.Namespace) -> int:
+    from . import alignment
+    from .corpus import discover_corpus
+
+    if not alignment.mfa_status().available:
+        print("MFA not found.\n" + alignment.MFA_INSTALL_HINT, file=sys.stderr)
+        return 1
+    inv = discover_corpus(args.audio_dir, transcript_dir=args.transcripts, aligned_dir=args.aligned)
+    out = args.output or str(Path(args.audio_dir).parent / "vowelchemy_aligned")
+    if args.download_models:
+        alignment.download_models(args.acoustic, args.dictionary, on_output=print)
+    res = alignment.align_inventory(
+        inv, out, dictionary=args.dictionary, acoustic_model=args.acoustic,
+        num_jobs=args.jobs, on_output=print,
+    )
+    print(f"{'OK' if res.ok else 'FAILED'}: {len(res.textgrids)} TextGrids in {res.output_dir}")
+    return 0 if res.ok else 1
+
+
+def _cmd_extract(args: argparse.Namespace) -> int:
+    from . import extraction
+
+    if not extraction.newfave_status().available:
+        print("new-fave not found.\n" + extraction.NEWFAVE_INSTALL_HINT, file=sys.stderr)
+        return 1
+    out = args.output or str(Path(args.audio_dir).parent / "vowelchemy_vowels")
+    res = extraction.extract_vowels(
+        args.audio_dir, args.aligned, out, speakers_file=args.speakers,
+        exclude_overlaps=not args.no_exclude_overlaps, on_output=print,
+    )
+    for note in res.notes:
+        print("note:", note)
+    if res.ok:
+        print(f"OK: {len(res.data)} tokens -> {res.csv_path}")
+        return 0
+    print("Extraction produced no usable data.", file=sys.stderr)
+    return 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vowelchemy", description=__doc__.splitlines()[0])
     sub = p.add_subparsers(dest="command", required=True)
@@ -123,6 +189,10 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--port", type=int, default=None)
     a.add_argument("--reload", action="store_true", help="auto-reload (development)")
     a.set_defaults(func=_cmd_app)
+
+    setup = sub.add_parser("setup", help="build the React UI (needs Node)")
+    setup.add_argument("--force", action="store_true", help="rebuild even if dist/ exists")
+    setup.set_defaults(func=_cmd_setup)
 
     d = sub.add_parser("demo", help="write a synthetic demo dataset")
     d.add_argument("out_dir", nargs="?", default="demo")
@@ -133,6 +203,25 @@ def build_parser() -> argparse.ArgumentParser:
     disc.add_argument("--transcripts", default=None, help="transcript folder (if separate)")
     disc.add_argument("--aligned", default=None, help="folder with aligned TextGrids")
     disc.set_defaults(func=_cmd_discover)
+
+    al = sub.add_parser("align", help="force-align a corpus with MFA")
+    al.add_argument("audio_dir")
+    al.add_argument("--transcripts", default=None)
+    al.add_argument("--aligned", default=None)
+    al.add_argument("-o", "--output", default=None)
+    al.add_argument("--acoustic", default="english_us_arpa")
+    al.add_argument("--dictionary", default="english_us_arpa")
+    al.add_argument("-j", "--jobs", type=int, default=3)
+    al.add_argument("--download-models", action="store_true", dest="download_models")
+    al.set_defaults(func=_cmd_align)
+
+    ex = sub.add_parser("extract", help="extract vowels with new-fave")
+    ex.add_argument("audio_dir")
+    ex.add_argument("--aligned", required=True, help="folder with aligned TextGrids")
+    ex.add_argument("-o", "--output", default=None)
+    ex.add_argument("-s", "--speakers", default=None)
+    ex.add_argument("--no-exclude-overlaps", action="store_true", dest="no_exclude_overlaps")
+    ex.set_defaults(func=_cmd_extract)
 
     n = sub.add_parser("normalize", help="normalize a vowel CSV")
     n.add_argument("vowels_csv")

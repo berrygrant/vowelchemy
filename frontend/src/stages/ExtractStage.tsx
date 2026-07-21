@@ -15,7 +15,7 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [refreshed, setRefreshed] = useState(false)
-  const { job, error: jobError, start, running } = useJob()
+  const { job, error: jobError, start, running } = useJob('vowelchemy-job-extract')
 
   const result = job?.result as { ok?: boolean; n_tokens?: number; notes?: string[] } | null | undefined
 
