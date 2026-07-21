@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.venv/
+venv/
+env/
+
+# Testing / tooling
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Vowelchemy working output (alignments, extracted formants, exports)
+# These are generated per-corpus and should not be committed.
+*_vowelchemy_out/
+scratch/
+*.TextGrid.tmp
+
+# But keep the bundled demo dataset
+!vowelchemy/data/
+
+# Frontend (React/Vite) — deps and build output are regenerated
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
