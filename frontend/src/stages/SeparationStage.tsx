@@ -31,6 +31,8 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
   const [groupBy, setGroupBy] = useState('')
   const [dimsOpt, setDimsOpt] = useState('F1 × F2')
   const [engine, setEngine] = useState('builtin')
+  const [withCI, setWithCI] = useState(false)
+  const [withP, setWithP] = useState(false)
   const [result, setResult] = useState<SeparationResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -58,6 +60,8 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
         group_by: groupBy || null,
         dims: DIMS[dimsOpt],
         engine,
+        bootstrap: withCI ? 200 : 0,
+        permutations: withP ? 500 : 0,
         dark: ctx.dark,
       })) as SeparationResult
       setResult(res)
@@ -92,7 +96,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
       <Card>
         <Field label="Vowels to compare (none = all)">
           <MultiSelect
-            options={vowels.map((v) => ({ value: v.vowel, label: v.vowel }))}
+            options={vowels.map((v) => ({ value: v.vowel, label: v.keyword ?? v.vowel }))}
             selected={selVowels}
             onChange={setSelVowels}
           />
@@ -120,9 +124,21 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
             </select>
           </Field>
         </div>
+        <div className="stat-toggles">
+          <label className="checkbox">
+            <input type="checkbox" checked={withCI} onChange={(e) => setWithCI(e.target.checked)} />
+            bootstrap JSD confidence intervals
+          </label>
+          <label className="checkbox">
+            <input type="checkbox" checked={withP} onChange={(e) => setWithP(e.target.checked)} />
+            Pillai permutation p-value
+          </label>
+          <span className="muted small">(slower)</span>
+        </div>
         <Button primary onClick={compute} busy={busy}>
           Compute separation
         </Button>
+        {(withCI || withP) && busy && <p className="muted small">Resampling… this can take a bit.</p>}
         {error && <Notice kind="error">{error}</Notice>}
       </Card>
 

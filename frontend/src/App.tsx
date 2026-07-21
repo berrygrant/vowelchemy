@@ -45,7 +45,7 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar stage={stage} setStage={setStage} status={status} refresh={refresh} />
+      <Sidebar stage={stage} setStage={setStage} status={status} refresh={refresh} ctx={ctx} />
       <main className="main">
         {offline && (
           <div className="notice notice-error">
