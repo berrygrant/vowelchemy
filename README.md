@@ -93,9 +93,14 @@ aligner, or R required.
 > **Deploying to a lab server?** A Dockerfile ships for that:
 >
 > ```bash
+> cd vowelchemy                # the repo root — the folder containing `Dockerfile`
 > docker build -t vowelchemy .
 > docker run -p 8000:8000 -v /path/to/corpora:/data vowelchemy
 > ```
+>
+> (`docker build` looks for `Dockerfile` in the directory you pass — `.` —
+> so "no such file or directory" means you're not in the repo root; either
+> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.)
 >
 > This needs Docker installed *and its daemon running* (on macOS/Windows
 > that means Docker Desktop is open), plus network access to Docker Hub for
