@@ -1,19 +1,21 @@
-"""Bridge to the phonJSD R package.
+"""Bridge to the phontrast R package (formerly phonJSD).
 
-`phonJSD <https://github.com/berrygrant/phonJSD>`_ (Grant M. Berry) quantifies
-separation between phonological categories with information-theoretic measures —
-Jensen-Shannon Divergence via KDE (the ``ks`` package), plus Pillai, Bhattacharyya,
-Mahalanobis, and percent-overlap — in arbitrary n-dimensional acoustic spaces.
+`phontrast <https://github.com/berrygrant/phontrast>`_ (Berry, 2026) quantifies
+contrast/separation between phonological categories with information-theoretic
+measures — Jensen-Shannon Divergence via KDE (the ``ks`` package), plus Pillai,
+Bhattacharyya, and percent-overlap — in arbitrary n-dimensional acoustic
+spaces.  The package was renamed from *phonJSD* to *phontrast*; this bridge
+prefers ``phontrast`` and falls back to a legacy ``phonJSD`` install.
 
-When R and phonJSD are installed, vowelchemy calls the package directly so the
-numbers match the lab's canonical method::
+When R and phontrast are installed, vowelchemy calls the package directly so
+the numbers match the lab's canonical method::
 
     compare_overlap_metrics(
-        data        = <tokens>,
-        features    = c("F1_norm", "F2_norm"),
+        data         = <tokens>,
+        features     = c("F1_norm", "F2_norm"),
         category_col = "vowel_canon",
-        group_col   = "Age Group",      # or NULL for the whole dataset
-        output      = "wide"
+        group_col    = "Age Group",     # or NULL for the whole dataset
+        output       = "wide"
     )
 
 When R is unavailable, :mod:`vowelchemy.metrics` provides a methodologically
@@ -33,54 +35,64 @@ import pandas as pd
 
 from .runners import CommandResult, run_streaming, which
 
-PHONJSD_INSTALL_HINT = (
-    "phonJSD is an R (>= 4.1) package. Install R, then in R run:\n"
+PHONTRAST_INSTALL_HINT = (
+    "phontrast is an R (>= 4.1) package. Install R, then in R run:\n"
     '  install.packages("remotes")\n'
-    '  remotes::install_github("berrygrant/phonJSD")\n'
+    '  remotes::install_github("berrygrant/phontrast")\n'
     "Ensure `Rscript` is on your PATH so vowelchemy can call it."
 )
 
+# Package names to try, in order: current name first, then the pre-rename one.
+_R_PACKAGES = ("phontrast", "phonJSD")
+
 
 @dataclass
-class PhonJSDStatus:
+class PhontrastStatus:
     rscript_path: Optional[str]
-    package_installed: bool = False
+    package: Optional[str] = None  # which R package name resolved
     version: Optional[str] = None
-    install_hint: str = PHONJSD_INSTALL_HINT
+    install_hint: str = PHONTRAST_INSTALL_HINT
+
+    @property
+    def package_installed(self) -> bool:
+        return self.package is not None
 
     @property
     def available(self) -> bool:
         return bool(self.rscript_path) and self.package_installed
 
 
-def phonjsd_status(rscript: str = "Rscript") -> PhonJSDStatus:
-    """Detect Rscript and whether the phonJSD package is installed."""
+def phontrast_status(rscript: str = "Rscript") -> PhontrastStatus:
+    """Detect Rscript and whether phontrast (or legacy phonJSD) is installed."""
     path = which(rscript)
     if not path:
-        return PhonJSDStatus(rscript_path=None)
-    try:
-        check = subprocess.run(
-            [rscript, "-e", 'cat(as.character(requireNamespace("phonJSD", quietly=TRUE)))'],
-            capture_output=True, text=True, timeout=60,
-        )
-        installed = check.stdout.strip().endswith("TRUE")
-    except (subprocess.SubprocessError, OSError):
-        return PhonJSDStatus(rscript_path=path)
-    version = None
-    if installed:
+        return PhontrastStatus(rscript_path=None)
+    for pkg in _R_PACKAGES:
+        try:
+            check = subprocess.run(
+                [rscript, "-e",
+                 f'cat(as.character(requireNamespace("{pkg}", quietly=TRUE)))'],
+                capture_output=True, text=True, timeout=60,
+            )
+        except (subprocess.SubprocessError, OSError):
+            return PhontrastStatus(rscript_path=path)
+        if not check.stdout.strip().endswith("TRUE"):
+            continue
+        version = None
         try:
             v = subprocess.run(
-                [rscript, "-e", 'cat(as.character(packageVersion("phonJSD")))'],
+                [rscript, "-e", f'cat(as.character(packageVersion("{pkg}")))'],
                 capture_output=True, text=True, timeout=60,
             )
             version = v.stdout.strip() or None
         except (subprocess.SubprocessError, OSError):
-            version = None
-    return PhonJSDStatus(rscript_path=path, package_installed=installed, version=version)
+            pass
+        return PhontrastStatus(rscript_path=path, package=pkg, version=version)
+    return PhontrastStatus(rscript_path=path)
 
 
 @dataclass
-class PhonJSDResult:
+class PhontrastResult:
     result: CommandResult
     data: Optional[pd.DataFrame] = None
     script_path: Optional[Path] = None
@@ -103,6 +115,7 @@ def build_r_script(
     category_col: str,
     group_col: Optional[str],
     output: str = "wide",
+    package: str = "phontrast",
 ) -> str:
     """Generate the R driver script (reads in_csv arg, writes out_csv arg)."""
     group_expr = f'"{group_col}"' if group_col else "NULL"
@@ -110,7 +123,7 @@ def build_r_script(
 args <- commandArgs(trailingOnly = TRUE)
 in_csv  <- args[1]
 out_csv <- args[2]
-suppressMessages(library(phonJSD))
+suppressMessages(library({package}))
 d <- read.csv(in_csv, check.names = FALSE, stringsAsFactors = FALSE)
 res <- compare_overlap_metrics(
   data         = d,
@@ -133,8 +146,8 @@ def compare_overlap_metrics(
     rscript: str = "Rscript",
     on_output: Optional[Callable[[str], None]] = None,
     timeout: Optional[float] = 1800,
-) -> PhonJSDResult:
-    """Run phonJSD's ``compare_overlap_metrics`` on ``df`` and return its table.
+) -> PhontrastResult:
+    """Run phontrast's ``compare_overlap_metrics`` on ``df`` and return its table.
 
     Only the needed columns are exported to R; rows with missing feature values
     are dropped first.
@@ -142,20 +155,28 @@ def compare_overlap_metrics(
     keep = [c for c in [*features, category_col, group_col] if c and c in df.columns]
     subset = df[keep].dropna(subset=[c for c in features if c in df.columns]).copy()
 
-    work = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="vowelchemy_phonjsd_"))
+    work = Path(work_dir) if work_dir else Path(tempfile.mkdtemp(prefix="vowelchemy_phontrast_"))
     work.mkdir(parents=True, exist_ok=True)
-    in_csv = work / "phonjsd_input.csv"
-    out_csv = work / "phonjsd_output.csv"
-    script_path = work / "run_phonjsd.R"
+    in_csv = work / "phontrast_input.csv"
+    out_csv = work / "phontrast_output.csv"
+    script_path = work / "run_phontrast.R"
     subset.to_csv(in_csv, index=False)
-    script_path.write_text(build_r_script(features, category_col, group_col, output))
+
+    status = phontrast_status(rscript)
+    package = status.package or _R_PACKAGES[0]
+    script_path.write_text(build_r_script(features, category_col, group_col, output, package))
 
     notes: list[str] = []
-    if not which(rscript):
-        notes.append("Rscript not found; cannot run phonJSD (use the built-in engine).")
-        return PhonJSDResult(
+    if not status.rscript_path:
+        notes.append("Rscript not found; cannot run phontrast (use the built-in engine).")
+        return PhontrastResult(
             result=CommandResult([rscript], 127, "", "Rscript not found"),
             script_path=script_path, input_csv=in_csv, notes=notes,
+        )
+    if status.package == "phonJSD":
+        notes.append(
+            "Using the legacy phonJSD install; the package is now published as "
+            "phontrast (remotes::install_github('berrygrant/phontrast'))."
         )
 
     result = run_streaming(
@@ -167,10 +188,10 @@ def compare_overlap_metrics(
         try:
             data = pd.read_csv(out_csv)
         except (OSError, pd.errors.ParserError) as exc:
-            notes.append(f"Could not read phonJSD output: {exc}")
+            notes.append(f"Could not read phontrast output: {exc}")
     else:
-        notes.append("phonJSD did not produce an output file; see the log.")
-    return PhonJSDResult(
+        notes.append("phontrast did not produce an output file; see the log.")
+    return PhontrastResult(
         result=result, data=data, script_path=script_path,
         input_csv=in_csv, output_csv=out_csv, notes=notes,
     )

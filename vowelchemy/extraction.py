@@ -1,8 +1,10 @@
 """Vowel-formant extraction via new-fave.
 
-`new-fave <https://github.com/JoFrhwld/new-fave>`_ (Josef Fruehwald) is the
-modern successor to FAVE-extract: it reads force-aligned TextGrids plus audio
-and measures vowel formants with fasttrackpy's optimal-track selection.
+`new-fave <https://github.com/Forced-Alignment-and-Vowel-Extraction/new-fave>`_
+(Fruehwald, 2024) is the modern successor to FAVE-extract (Rosenfelder et al.,
+2022): it reads force-aligned TextGrids plus audio and measures vowel formants
+with fasttrackpy's optimal-track selection.  Full citations in
+``docs/REFERENCES.md``.
 
 Vowelchemy shells out to new-fave's ``fave-extract`` CLI and then loads the
 resulting CSV.  We deliberately extract **raw Hz** formants and apply
@@ -27,6 +29,7 @@ from typing import Callable, Optional
 
 import pandas as pd
 
+from .analysis import read_table
 from .corpus import CorpusInventory, discover_corpus
 from .runners import CommandResult, ToolStatus, probe_version, run_streaming, which
 from .schema import ColumnSchema
@@ -218,9 +221,9 @@ def _stage_aligned(
 
 
 def load_existing_vowel_data(csv_path: str | os.PathLike) -> ExtractionResult:
-    """Wrap an already-extracted CSV as an :class:`ExtractionResult`."""
+    """Wrap an already-extracted CSV/TSV table as an :class:`ExtractionResult`."""
     csv_path = Path(csv_path).expanduser()
-    df = pd.read_csv(csv_path)
+    df = read_table(csv_path)
     schema = ColumnSchema.detect(df)
     dummy = CommandResult(args=["<preexisting>"], returncode=0, stdout="", stderr="")
     notes: list[str] = []

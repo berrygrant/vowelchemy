@@ -61,6 +61,33 @@ GLOSSARY: list[dict] = [
 ]
 
 
+# Key readings behind the tool, shown in the in-app glossary drawer.
+# Full APA entries + feature mapping live in docs/REFERENCES.md.
+REFERENCES: list[dict] = [
+    {"work": "Lobanov (1971), JASA 49", "why": "The z-score normalization (the default)."},
+    {"work": "Labov, Ash & Boberg (2006), The Atlas of North American English",
+     "why": "The ANAE log-mean scaling method and the Telsur G constant."},
+    {"work": "Nearey (1978), Phonetic feature systems for vowels",
+     "why": "Log-mean normalization (shared and per-formant variants)."},
+    {"work": "Watt & Fabricius (2002); Fabricius, Watt & Johnson (2009)",
+     "why": "The modified S-centroid normalization."},
+    {"work": "Traunmüller (1990), JASA 88", "why": "The Hz→Bark formula."},
+    {"work": "Thomas & Kendall (2007), NORM suite",
+     "why": "The normalization-method family this tool mirrors."},
+    {"work": "Lin (1991), IEEE Trans. Inf. Theory 37",
+     "why": "Jensen-Shannon Divergence — the separation metric."},
+    {"work": "Pillai (1955); Nycz & Hall-Lew (2013); Hay, Warren & Drager (2006)",
+     "why": "The Pillai score and how vowel mergers are measured in practice."},
+    {"work": "Bhattacharyya (1943); Johnson (2015, NWAV 44)",
+     "why": "The Bhattacharyya overlap coefficient for vowel categories."},
+    {"work": "McAuliffe et al. (2017), Interspeech", "why": "The Montreal Forced Aligner."},
+    {"work": "Fruehwald (2024), new-fave; Rosenfelder et al. (2022), FAVE",
+     "why": "Formant extraction (and its predecessor)."},
+    {"work": "Berry (2026), phontrast", "why": "The canonical R separation engine."},
+    {"work": "Wells (1982), Accents of English", "why": "The lexical sets (FLEECE, LOT…)."},
+]
+
+
 def jsd_verdict(jsd: Optional[float]) -> str:
     """One-line plain-language reading of a JSD value."""
     if jsd is None:

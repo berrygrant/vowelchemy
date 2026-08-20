@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
+import { saveText } from '../lib'
 import type { Ctx, Project } from '../types'
 
 // Reproducible recipe (R1) + persistent named projects (R10) for the sidebar.
@@ -20,14 +21,12 @@ export function SessionPanel({ ctx }: { ctx: Ctx }) {
   }
 
   const downloadRecipe = async () => {
-    const r = await api.get('/api/recipe')
-    const blob = new Blob([JSON.stringify(r, null, 2)], { type: 'application/json' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'vowelchemy_recipe.json'
-    a.click()
-    URL.revokeObjectURL(url)
+    try {
+      const r = await api.get('/api/recipe')
+      saveText(JSON.stringify(r, null, 2), 'vowelchemy_recipe.json', 'application/json')
+    } catch (e) {
+      flash((e as Error).message)
+    }
   }
 
   const loadRecipe = async (file: File) => {

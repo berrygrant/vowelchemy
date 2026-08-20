@@ -2,6 +2,8 @@
 // backend can keep the loaded dataset between calls. Paths already include the
 // `/api` prefix; in dev, Vite proxies `/api` to the uvicorn backend.
 
+import { saveBlob } from './lib'
+
 const SESSION_KEY = 'vowelchemy-session'
 
 function sessionId(): string {
@@ -19,17 +21,20 @@ function headers(json = true): Record<string, string> {
   return h
 }
 
-async function handle(res: Response) {
-  if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`
-    try {
-      const j = await res.json()
-      if (j && j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new Error(detail)
+// Extract the backend's `detail` message from a non-OK response.
+async function errorDetail(res: Response): Promise<string> {
+  let detail = `${res.status} ${res.statusText}`
+  try {
+    const j = await res.json()
+    if (j && j.detail) detail = typeof j.detail === 'string' ? j.detail : JSON.stringify(j.detail)
+  } catch {
+    /* non-JSON error body */
   }
+  return detail
+}
+
+async function handle(res: Response) {
+  if (!res.ok) throw new Error(await errorDetail(res))
   return res.json()
 }
 
@@ -48,17 +53,7 @@ export const api = {
   },
   download: async (path: string, filename: string) => {
     const res = await fetch(path, { headers: headers(false) })
-    if (!res.ok) throw new Error('Download failed')
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = filename
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
-    URL.revokeObjectURL(url)
+    if (!res.ok) throw new Error(await errorDetail(res))
+    saveBlob(await res.blob(), filename)
   },
 }
-
-export { sessionId }

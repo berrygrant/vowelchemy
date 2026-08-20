@@ -18,6 +18,10 @@ The canonical MFA 3.x commands used here are::
 
 MFA expects each ``<basename>.wav`` to sit next to a ``<basename>.lab`` (or
 ``.txt``) transcript, optionally grouped into per-speaker sub-folders.
+
+Reference: McAuliffe, Socolof, Mihuc, Wagner & Sonderegger (2017), *Montreal
+Forced Aligner: Trainable text-speech alignment using Kaldi*, Interspeech —
+full citation in ``docs/REFERENCES.md``.
 """
 
 from __future__ import annotations
@@ -36,7 +40,7 @@ MFA_INSTALL_HINT = (
     "Install MFA in its own environment, e.g.\n"
     "  conda create -n aligner -c conda-forge montreal-forced-aligner\n"
     "  conda activate aligner\n"
-    "then launch vowelchemy from that environment (or set the MFA path in the app)."
+    "then launch vowelchemy from that environment so `mfa` is on PATH."
 )
 
 
@@ -212,7 +216,8 @@ def align_inventory(
     staging = staging_dir or (output_dir / "_mfa_corpus")
     staged = stage_corpus(inventory, staging, link=link)
     if on_output:
-        on_output(f"Staged {staged.n_staged} recording(s) into {staged.corpus_dir}")
+        how = "symlinked" if staged.linked else "copied"
+        on_output(f"Staged ({how}) {staged.n_staged} recording(s) into {staged.corpus_dir}")
         if staged.skipped:
             on_output(f"Skipped {len(staged.skipped)} unpaired recording(s).")
     return align_corpus(

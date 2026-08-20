@@ -4,27 +4,18 @@ import type { Ctx, GroupingColumns, SeparationResult, VowelInfo } from '../types
 import { Button, Card, Field, LogBox, MultiSelect, Notice } from '../components/ui'
 import { DataTable } from '../components/DataTable'
 import { PlotlyChart } from '../components/PlotlyChart'
+import { groupableColumns, saveText, toCsv } from '../lib'
+import { useBusy } from '../hooks/useBusy'
 
-const EXCLUDE = ['vowel_label', 'vowel_canon', 'speaker', 'vowel']
 const DIMS: Record<string, string[] | null> = {
   'F1 × F2': null,
   'F1 only': ['F1_norm'],
   'F2 only': ['F2_norm'],
 }
 
-function downloadText(text: string, filename: string) {
-  const blob = new Blob([text], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
 export function SeparationStage({ ctx }: { ctx: Ctx }) {
   const loaded = ctx.status?.data.loaded
-  const phonjsdOk = ctx.status?.tools.phonjsd.available
+  const phontrastOk = ctx.status?.tools.phontrast.available
   const [vowels, setVowels] = useState<VowelInfo[]>([])
   const [grouping, setGrouping] = useState<GroupingColumns | null>(null)
   const [selVowels, setSelVowels] = useState<string[]>([])
@@ -34,8 +25,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
   const [withCI, setWithCI] = useState(false)
   const [withP, setWithP] = useState(false)
   const [result, setResult] = useState<SeparationResult | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, setError, run } = useBusy()
 
   useEffect(() => {
     if (!loaded) return
@@ -49,12 +39,10 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
         setError((e as Error).message)
       }
     })()
-  }, [loaded])
+  }, [loaded, setError])
 
-  const compute = async () => {
-    setBusy(true)
-    setError('')
-    try {
+  const compute = () =>
+    run(async () => {
       const res = (await api.post('/api/separation', {
         vowels: selVowels,
         group_by: groupBy || null,
@@ -65,28 +53,23 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
         dark: ctx.dark,
       })) as SeparationResult
       setResult(res)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
   if (!loaded) {
     return (
       <div className="stage">
-        <h1>6 · Separation metrics (phonJSD)</h1>
+        <h1>6 · Separation metrics (phontrast)</h1>
         <Notice kind="info">Build a dataset in stage 4 first.</Notice>
       </div>
     )
   }
 
-  const demoCols = (grouping?.columns ?? []).filter((c) => !EXCLUDE.includes(c))
-  const pj = result?.phonjsd
+  const demoCols = groupableColumns(grouping)
+  const pt = result?.phontrast
 
   return (
     <div className="stage">
-      <h1>6 · Separation metrics (phonJSD)</h1>
+      <h1>6 · Separation metrics (phontrast)</h1>
       <p className="muted">
         Jensen-Shannon Divergence measures how distinguishable two vowels are in normalized formant
         space: <b>1 = fully separated, 0 = merged</b>. Pillai and Bhattacharyya overlap are shown
@@ -117,10 +100,10 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
               ))}
             </select>
           </Field>
-          <Field label="Engine" hint={phonjsdOk ? undefined : 'install R + phonJSD for the canonical engine'}>
+          <Field label="Engine" hint={phontrastOk ? undefined : 'install R + phontrast for the canonical engine'}>
             <select value={engine} onChange={(e) => setEngine(e.target.value)}>
               <option value="builtin">Built-in (Python)</option>
-              {phonjsdOk && <option value="phonjsd">phonJSD (R)</option>}
+              {phontrastOk && <option value="phontrast">phontrast (R)</option>}
             </select>
           </Field>
         </div>
@@ -142,28 +125,26 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
         {error && <Notice kind="error">{error}</Notice>}
       </Card>
 
-      {pj && pj.error && <Notice kind="warn">{pj.error}</Notice>}
-      {pj && pj.table && (
-        <Card title="phonJSD results (canonical)">
+      {pt && pt.error && <Notice kind="warn">{pt.error}</Notice>}
+      {pt && pt.table && (
+        <Card title="phontrast results (canonical)">
           <div className="row-between">
             <span className="muted small">from compare_overlap_metrics()</span>
-            {result?.phonjsd?.table && (
-              <Button onClick={() => downloadText(toCsv(pj.table!), 'vowelchemy_phonjsd.csv')}>
-                ⬇️ Download
-              </Button>
-            )}
+            <Button onClick={() => saveText(toCsv(pt.table!), 'vowelchemy_phontrast.csv')}>
+              ⬇️ Download
+            </Button>
           </div>
-          <DataTable table={pj.table} />
-          <LogBox text={pj.log ?? ''} />
+          <DataTable table={pt.table} />
+          <LogBox text={pt.log ?? ''} />
         </Card>
       )}
 
       {result?.builtin && (
-        <Card title={pj?.table ? 'Built-in metrics' : 'Results'}>
+        <Card title={pt?.table ? 'Built-in metrics' : 'Results'}>
           <div className="row-between">
             <span className="muted small">JSD 1 = separated · 0 = merged</span>
             {result.full_csv && (
-              <Button onClick={() => downloadText(result.full_csv!, 'vowelchemy_separation.csv')}>
+              <Button onClick={() => saveText(result.full_csv!, 'vowelchemy_separation.csv')}>
                 ⬇️ Download CSV
               </Button>
             )}
@@ -174,23 +155,14 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
 
       {result?.figure_bar && (
         <Card>
-          <PlotlyChart figure={result.figure_bar} />
+          <PlotlyChart figure={result.figure_bar} exportName="vowelchemy_separation" />
         </Card>
       )}
       {result?.figure_matrix && (
         <Card>
-          <PlotlyChart figure={result.figure_matrix} height={460} />
+          <PlotlyChart figure={result.figure_matrix} height={460} exportName="vowelchemy_separation_matrix" />
         </Card>
       )}
     </div>
   )
-}
-
-// Reconstruct CSV text from a table payload (for the phonJSD download).
-function toCsv(table: { columns: string[]; records: Record<string, unknown>[] }): string {
-  const head = table.columns.join(',')
-  const rows = table.records.map((r) =>
-    table.columns.map((c) => JSON.stringify(r[c] ?? '')).join(','),
-  )
-  return [head, ...rows].join('\n')
 }

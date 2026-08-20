@@ -3,6 +3,8 @@ import { api } from '../api'
 import type { Ctx, LayoutSuggestion, ScanResult } from '../types'
 import { Button, Card, Field, Metric, Notice } from '../components/ui'
 import { PathInput } from '../components/PathInput'
+import { DataTable } from '../components/DataTable'
+import { useBusy } from '../hooks/useBusy'
 
 export function CorpusStage({ ctx }: { ctx: Ctx }) {
   const [rootDir, setRootDir] = useState('')
@@ -12,30 +14,20 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
   const [speakersPath, setSpeakersPath] = useState('')
   const [scan, setScan] = useState<ScanResult | null>(null)
   const [detect, setDetect] = useState<LayoutSuggestion | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const { busy, error, run } = useBusy()
 
-  const autodetect = async () => {
-    setBusy(true)
-    setError('')
-    try {
+  const autodetect = () =>
+    run(async () => {
       const res = (await api.post('/api/corpus/autodetect', { root_dir: rootDir })) as LayoutSuggestion
       setDetect(res)
       if (res.audio_dir) setAudioDir(res.audio_dir)
       if (res.transcript_dir) setTranscriptDir(res.transcript_dir)
       if (res.aligned_dir) setAlignedDir(res.aligned_dir)
       if (res.speakers_csv) setSpeakersPath(res.speakers_csv)
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
-  const doScan = async () => {
-    setBusy(true)
-    setError('')
-    try {
+  const doScan = () =>
+    run(async () => {
       const res = (await api.post('/api/corpus/scan', {
         audio_dir: audioDir,
         transcript_dir: transcriptDir || null,
@@ -44,28 +36,20 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
       })) as ScanResult
       setScan(res)
       await ctx.refresh()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
-  const loadCsv = async (path: string) => {
-    setBusy(true)
-    setError('')
-    try {
+  const loadCsv = (path: string) =>
+    run(async () => {
       await api.post('/api/voweldata/load', { csv_path: path })
       await ctx.refresh()
       ctx.go('dataset')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
   const s = scan?.summary
+  const detectedCsvs = detect?.vowel_csvs ?? []
+  const scannedCsvs = scan?.existing_vowel_csvs ?? []
+  const loadableCsvs = Array.from(new Set([...detectedCsvs, ...scannedCsvs]))
+
   return (
     <div className="stage">
       <h1>1 · Locate the corpus</h1>
@@ -83,12 +67,12 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
           🪄 Auto-detect layout
         </Button>
         {detect && (
-          <Notice kind={detect.counts.wav > 0 ? 'success' : 'warn'}>
+          <Notice kind={detect.counts.wav > 0 || detectedCsvs.length > 0 ? 'success' : 'warn'}>
             Found <b>{detect.counts.wav}</b> wav, <b>{detect.counts.transcript}</b> transcript, and{' '}
             <b>{detect.counts.aligned}</b> aligned-TextGrid file(s). Fields below were filled in — adjust
             if needed.
-            {detect.vowel_csvs.length > 0 && (
-              <> Also spotted {detect.vowel_csvs.length} vowel CSV(s) you can load directly.</>
+            {detectedCsvs.length > 0 && (
+              <> Also spotted {detectedCsvs.length} vowel CSV(s) — loadable below.</>
             )}
           </Notice>
         )}
@@ -143,38 +127,28 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
           {scan!.items.length > 0 && (
             <details className="details">
               <summary>Recording list ({scan!.items.length})</summary>
-              <div className="table-wrap">
-                <table className="data-table">
-                  <thead>
-                    <tr>
-                      <th>stem</th>
-                      <th>speaker</th>
-                      <th>audio</th>
-                      <th>transcript</th>
-                      <th>aligned</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {scan!.items.slice(0, 200).map((it) => (
-                      <tr key={it.stem + it.speaker}>
-                        <td>{it.stem}</td>
-                        <td>{it.speaker}</td>
-                        <td>{it.audio ?? '—'}</td>
-                        <td>{it.transcript ?? '—'}</td>
-                        <td>{it.aligned ? '✓' : ''}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                table={{
+                  columns: ['stem', 'speaker', 'audio', 'transcript', 'aligned'],
+                  records: scan!.items.map((it) => ({
+                    stem: it.stem,
+                    speaker: it.speaker,
+                    audio: it.audio,
+                    transcript: it.transcript,
+                    aligned: it.aligned ? '✓' : '',
+                  })),
+                  n_total: scan!.items.length,
+                  n_shown: Math.min(scan!.items.length, 200),
+                }}
+              />
             </details>
           )}
         </Card>
       )}
 
-      {scan && scan.existing_vowel_csvs.length > 0 && (
+      {loadableCsvs.length > 0 && (
         <Card title="Existing extracted-vowel files" subtitle="Skip straight to analysis by loading one.">
-          {scan.existing_vowel_csvs.map((p) => (
+          {loadableCsvs.map((p) => (
             <div key={p} className="row-between">
               <code className="path">{p}</code>
               <Button onClick={() => loadCsv(p)} busy={busy}>

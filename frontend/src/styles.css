@@ -707,3 +707,10 @@ input[type='file'] {
   align-items: center;
   margin: 8px 0;
 }
+
+/* Glossary reference entries */
+.glossary-ref {
+  font-weight: 600;
+  font-size: 0.85rem;
+  font-style: italic;
+}

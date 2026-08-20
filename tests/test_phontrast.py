@@ -1,28 +1,28 @@
 import pandas as pd
 
-from vowelchemy import phonjsd
+from vowelchemy import phontrast
 
 
 def test_r_string_vector():
-    assert phonjsd._r_string_vector(["F1_norm", "F2_norm"]) == 'c("F1_norm", "F2_norm")'
+    assert phontrast._r_string_vector(["F1_norm", "F2_norm"]) == 'c("F1_norm", "F2_norm")'
 
 
 def test_build_r_script_group_and_null():
-    script_grouped = phonjsd.build_r_script(
+    script_grouped = phontrast.build_r_script(
         ["F1_norm", "F2_norm"], "vowel_canon", "Age Group", "wide"
     )
-    assert "library(phonJSD)" in script_grouped
+    assert "library(phontrast)" in script_grouped
     assert "compare_overlap_metrics" in script_grouped
     assert 'features     = c("F1_norm", "F2_norm")' in script_grouped
     assert 'category_col = "vowel_canon"' in script_grouped
     assert 'group_col    = "Age Group"' in script_grouped
 
-    script_nogroup = phonjsd.build_r_script(["F1_norm", "F2_norm"], "vowel_canon", None)
+    script_nogroup = phontrast.build_r_script(["F1_norm", "F2_norm"], "vowel_canon", None)
     assert "group_col    = NULL" in script_nogroup
 
 
 def test_status_is_graceful_without_r():
-    status = phonjsd.phonjsd_status()
+    status = phontrast.phontrast_status()
     assert isinstance(status.available, bool)  # never raises even if R is absent
 
 
@@ -30,7 +30,7 @@ def test_compare_overlap_metrics_without_r(tmp_path):
     df = pd.DataFrame(
         {"vowel_canon": ["IY", "EH"], "F1_norm": [-1.0, 1.0], "F2_norm": [1.0, -1.0]}
     )
-    res = phonjsd.compare_overlap_metrics(
+    res = phontrast.compare_overlap_metrics(
         df, features=["F1_norm", "F2_norm"], category_col="vowel_canon",
         work_dir=tmp_path, rscript="definitely-not-rscript-xyz",
     )

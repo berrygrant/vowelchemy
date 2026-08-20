@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import type { Ctx } from '../types'
 import { Button, Card, Field, LogBox, Notice } from '../components/ui'
 import { ProgressBar } from '../components/ProgressBar'
+import { PathInput } from '../components/PathInput'
 import { useJob } from '../hooks/useJob'
 
 export function AlignStage({ ctx }: { ctx: Ctx }) {
@@ -11,18 +12,9 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
   const [numJobs, setNumJobs] = useState(3)
   const [outputDir, setOutputDir] = useState('')
   const [downloadModels, setDownloadModels] = useState(false)
-  const [refreshed, setRefreshed] = useState(false)
-  const { job, error, start, running } = useJob('vowelchemy-job-align')
+  const { job, error, start, running } = useJob('vowelchemy-job-align', () => ctx.refresh())
 
-  useEffect(() => {
-    if (job?.status === 'done' && !refreshed) {
-      ctx.refresh()
-      setRefreshed(true)
-    }
-  }, [job?.status, refreshed, ctx])
-
-  const run = () => {
-    setRefreshed(false)
+  const run = () =>
     start('/api/align', {
       acoustic_model: acoustic,
       dictionary,
@@ -30,7 +22,6 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
       output_dir: outputDir || null,
       download_models: downloadModels,
     })
-  }
 
   const result = job?.result as { ok?: boolean; n_textgrids?: number } | null | undefined
 
@@ -70,7 +61,7 @@ export function AlignStage({ ctx }: { ctx: Ctx }) {
               />
             </Field>
             <Field label="Output folder for TextGrids" hint="blank = alongside the corpus">
-              <input value={outputDir} onChange={(e) => setOutputDir(e.target.value)} />
+              <PathInput value={outputDir} onChange={setOutputDir} />
             </Field>
           </div>
           <label className="checkbox">
