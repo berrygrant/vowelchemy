@@ -85,9 +85,19 @@ answers `command not found`, install them from python.org and git-scm.com.
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
+python3 -m venv .venv          # make a private environment for Vowelchemy
+source .venv/bin/activate      # on Windows type:  .venv\Scripts\activate
 pip install .
 vowelchemy app     # starts the server and opens the app in your browser
 ```
+
+The two `venv` lines create and enter a *virtual environment* — a private
+folder holding Vowelchemy and everything it needs, so nothing touches your
+system's Python. Don't skip them: without a venv, `pip install .` fails on
+many machines with an `externally-managed-environment` error. Whenever you
+come back in a new terminal, run the `activate` line again before
+`vowelchemy app`. (If any of this misbehaves, fall back to the double-click
+launcher — it does exactly these steps for you.)
 
 Either way, success looks like: your browser showing the Vowelchemy page
 (the terminal or launcher window stays open in the background while you
@@ -259,6 +269,8 @@ mfa model download acoustic english_us_arpa
 mfa model download dictionary english_us_arpa
 
 # 2. In that SAME environment, install new-fave and Vowelchemy
+#    (the activated conda environment plays the virtual-environment role
+#     here, so plain pip is safe — no separate venv needed)
 pip install new-fave
 cd vowelchemy        # the folder you cloned in A.1
 pip install .

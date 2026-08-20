@@ -63,9 +63,20 @@ charts. Install the backend, build the UI once, then launch:
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
-pip install .            # backend (pandas, scipy, plotly, fastapi) + the prebuilt UI
-vowelchemy app           # serves API + UI at http://127.0.0.1:8000 and opens your browser
+python3 -m venv .venv          # private environment for Vowelchemy
+source .venv/bin/activate      # Windows: .venv\Scripts\activate
+pip install .                  # backend (pandas, scipy, plotly, fastapi) + the prebuilt UI
+vowelchemy app                 # serves API + UI at http://127.0.0.1:8000 and opens your browser
 ```
+
+> **Don't skip the venv lines.** A bare `pip install .` fails on modern
+> Python setups (Homebrew, current Linux distros) with an
+> `externally-managed-environment` error, and a system-wide `pip` often
+> belongs to a different Python than the one that would run `vowelchemy`.
+> The virtual environment sidesteps both. Re-run `source .venv/bin/activate`
+> in every new terminal — or skip all of this with the double-click
+> launchers above, which create and reuse their own environment
+> (`.venv-app/`) automatically.
 
 (`--no-browser` suppresses the auto-open; `--port` changes the port.)
 
@@ -77,13 +88,19 @@ aligner, or R required.
 > **No Node needed.** The built UI is committed inside the package
 > (`vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
 > `vowelchemy app` serves it from any directory. After changing frontend
-> source, rebuild with `vowelchemy setup` (needs Node ≥ 18). Or use Docker —
-> no local Python or Node needed:
+> source, rebuild with `vowelchemy setup` (needs Node ≥ 18).
+>
+> **Deploying to a lab server?** A Dockerfile ships for that:
 >
 > ```bash
 > docker build -t vowelchemy .
 > docker run -p 8000:8000 -v /path/to/corpora:/data vowelchemy
 > ```
+>
+> This needs Docker installed *and its daemon running* (on macOS/Windows
+> that means Docker Desktop is open), plus network access to Docker Hub for
+> the base images. It's the right tool for a shared lab machine, not a
+> student laptop — students should use the launchers or desktop app above.
 >
 > **Developing the UI?** Run the backend with `vowelchemy app` and, in another
 > terminal, `cd frontend && npm run dev` for a hot-reloading dev server at
@@ -352,6 +369,7 @@ tests/                # pytest suite (library + API)
 ## Development
 
 ```bash
+python3 -m venv .venv && source .venv/bin/activate   # once per checkout
 pip install -e ".[dev]"      # backend + test deps
 pytest                        # library + API tests
 
