@@ -15,7 +15,8 @@ spread and shape of the data:
   across groups or as a vowel×vowel matrix.
 
 Colours come from the data-viz reference palette (validated colourblind-safe).
-This module never imports Streamlit, so the figures are reusable from notebooks.
+This module has no UI-framework dependencies, so the figures are reusable from
+notebooks and scripts.
 """
 
 from __future__ import annotations
@@ -50,6 +51,12 @@ _BLUE_SEQUENTIAL = [
 # Canonical left→right / high→low order so a vowel keeps its colour regardless
 # of which subset is plotted ("colour follows the entity, never its rank").
 _VOWEL_ORDER = list(ARPABET_VOWELS.keys())
+
+
+def _vowel_order(cats: Sequence[str]) -> list[str]:
+    """Order categories by the canonical vowel order, unknowns (sorted) last."""
+    known = [v for v in _VOWEL_ORDER if v in cats]
+    return known + sorted(c for c in cats if c not in _VOWEL_ORDER)
 
 
 def _mode(dark: bool) -> str:
@@ -131,7 +138,6 @@ def vowel_space(
     x: str = "F2_norm",
     y: str = "F1_norm",
     color: str = "vowel_canon",
-    label_by: str = "vowel_canon",
     show_tokens: bool = True,
     ellipses: bool = True,
     n_std: float = 2.0,
@@ -154,7 +160,7 @@ def vowel_space(
     fig = go.Figure()
     cats = list(dict.fromkeys(df[color].dropna().astype(str)))
     order = category_order or (
-        [v for v in _VOWEL_ORDER if v in cats] + [c for c in cats if c not in _VOWEL_ORDER]
+        _vowel_order(cats)
         if color in ("vowel_canon", "vowel")
         else sorted(cats)
     )
@@ -435,7 +441,7 @@ def trajectory_space(
     fig = go.Figure()
     cats = list(dict.fromkeys(mean_df["vowel"].astype(str)))
     order = category_order or (
-        [v for v in _VOWEL_ORDER if v in cats] + [c for c in cats if c not in _VOWEL_ORDER]
+        _vowel_order(cats)
     )
     cmap = stable_color_map(cats, dark=dark, order=order)
     for cat in order:
@@ -482,7 +488,7 @@ def trajectory_time(
     fig = go.Figure()
     cats = list(dict.fromkeys(mean_df["vowel"].astype(str)))
     order = category_order or (
-        [v for v in _VOWEL_ORDER if v in cats] + [c for c in cats if c not in _VOWEL_ORDER]
+        _vowel_order(cats)
     )
     cmap = stable_color_map(cats, dark=dark, order=order)
     n_steps = int(mean_df["step"].max()) + 1 if not mean_df.empty else 1

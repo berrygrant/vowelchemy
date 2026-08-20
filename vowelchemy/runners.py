@@ -27,10 +27,6 @@ class CommandResult:
     def ok(self) -> bool:
         return self.returncode == 0 and not self.timed_out
 
-    @property
-    def command(self) -> str:
-        return " ".join(self.args)
-
 
 @dataclass
 class ToolStatus:
@@ -106,7 +102,9 @@ def probe_version(executable: str, version_args: Sequence[str] = ("version",)) -
     path = which(executable)
     if not path:
         return None
-    for candidate in (list(version_args), ["--version"], ["-V"]):
+    # De-duplicate so e.g. version_args=("--version",) doesn't run twice.
+    candidates = list(dict.fromkeys((tuple(version_args), ("--version",), ("-V",))))
+    for candidate in candidates:
         try:
             res = subprocess.run(
                 [executable, *candidate],

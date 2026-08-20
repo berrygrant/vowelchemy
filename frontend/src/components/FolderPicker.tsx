@@ -98,7 +98,9 @@ export function FolderPicker({
               </div>
             ))}
           {data && data.dirs.length === 0 && (mode === 'dir' || data.files.length === 0) && (
-            <p className="muted small">No sub-folders here.</p>
+            <p className="muted small">
+              {mode === 'file' ? 'No sub-folders or matching files here.' : 'No sub-folders here.'}
+            </p>
           )}
         </div>
         {mode === 'dir' && data && (

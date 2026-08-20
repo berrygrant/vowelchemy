@@ -15,9 +15,6 @@ env/
 .coverage
 htmlcov/
 
-# Streamlit
-.streamlit/secrets.toml
-
 # OS
 .DS_Store
 Thumbs.db
@@ -31,7 +28,9 @@ scratch/
 # But keep the bundled demo dataset
 !vowelchemy/data/
 
-# Frontend (React/Vite) — deps are regenerated; the built dist/ IS committed so
-# `pip install . && vowelchemy app` works without Node (U1 / Node-free install).
+# Frontend (React/Vite) — deps are regenerated. The production build goes to
+# vowelchemy/webui/ (committed + shipped in the wheel, so `pip install .` then
+# `vowelchemy app` works without Node). frontend/dist is a stale location.
 frontend/node_modules/
+frontend/dist/
 frontend/*.tsbuildinfo

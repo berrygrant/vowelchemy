@@ -21,7 +21,7 @@ def test_health_not_shadowed_by_static_mount(client):
 
 def test_status_reports_tools_and_empty_data(client):
     body = client.get("/api/status", headers=H("s-status")).json()
-    for tool in ("mfa", "newfave", "phonjsd"):
+    for tool in ("mfa", "newfave", "phontrast"):
         assert isinstance(body["tools"][tool]["available"], bool)
     assert body["data"]["loaded"] is False
 
