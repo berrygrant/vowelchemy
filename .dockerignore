@@ -10,4 +10,4 @@ frontend/dist
 examples
 docs
 tests
-vowelchemy/webui
+src/vowelchemy/webui

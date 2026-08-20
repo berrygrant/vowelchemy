@@ -18,9 +18,9 @@ from PyInstaller.utils.hooks import collect_data_files
 
 APP_NAME = "Vowelchemy"
 ONEFILE = sys.platform == "win32"
-# Resolve the vowelchemy package from the source checkout itself, so the build
-# works whether the venv install was editable or regular.
-REPO_ROOT = os.path.abspath(os.path.join(SPECPATH, "..", ".."))  # noqa: F821
+# Resolve the vowelchemy package from the source checkout itself (src layout),
+# so the build works whether the venv install was editable or regular.
+SRC_DIR = os.path.abspath(os.path.join(SPECPATH, "..", "..", "src"))  # noqa: F821
 
 datas = collect_data_files("vowelchemy")  # webui/** and any other package data
 
@@ -40,7 +40,7 @@ hiddenimports = [
 
 a = Analysis(
     ["launch_vowelchemy.py"],
-    pathex=[REPO_ROOT],
+    pathex=[SRC_DIR],
     binaries=[],
     datas=datas,
     hiddenimports=hiddenimports,

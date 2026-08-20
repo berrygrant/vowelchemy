@@ -37,6 +37,9 @@ vowelchemy = "vowelchemy.cli:main"
 Homepage = "https://github.com/berrygrant/vowelchemy"
 
 [tool.setuptools]
+# src layout: the repo root has no folder named like the package, so students
+# can't end up one `cd vowelchemy` too deep. Import name is unchanged.
+package-dir = { "" = "src" }
 packages = ["vowelchemy"]
 
 [tool.setuptools.package-data]
