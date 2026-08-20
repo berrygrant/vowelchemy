@@ -508,12 +508,13 @@ A defensible methods paragraph, with every choice you made in this tutorial
 > and Pillai scores (Pillai, 1955; Nycz & Hall-Lew, 2013), computed with
 > phontrast (Berry, 2026) via Vowelchemy.
 
-Full citations for every method live in
+Full citations for every *method* live in
 [`docs/REFERENCES.md`](REFERENCES.md) (with a feature → citation map), and
-the in-app **Glossary → Key readings** lists the same works. Cite Vowelchemy
-itself via the repository's `CITATION.cff`. Finish by downloading a
-**recipe** from the Session panel and saving it alongside your CSV and
-figures — your supervisor will ask.
+the in-app **Glossary → Key readings** lists the same works; the
+corpus-specific references are in this tutorial's own reference list below.
+Cite Vowelchemy itself via the repository's `CITATION.cff`. Finish by
+downloading a **recipe** from the Session panel and saving it alongside your
+CSV and figures — your supervisor will ask.
 
 ---
 
@@ -532,6 +533,26 @@ figures — your supervisor will ask.
   Philadelphia backdrop; Nycz & Hall-Lew (2013) for how mergers are measured
   defensibly; Patchell & Berry (2024) for what a finished PREP study looks
   like.
+
+## References
+
+The corpus and community works cited above, in APA format. (Method
+references — Lobanov, Lin, Pillai, Nycz & Hall-Lew, Hay et al., McAuliffe
+et al., Fruehwald, Berry's phontrast — live in
+[`docs/REFERENCES.md`](REFERENCES.md).)
+
+- Berry, G. M. (2018). *Liminal voices, central constraints: Minority
+  adoption of majority sound change* [Doctoral dissertation, The
+  Pennsylvania State University].
+  https://etda.libraries.psu.edu/catalog/15193gmb223
+- Berry, G. M. (2022). *Language variation and change in Puerto Rican
+  Philadelphia*. OSF. https://doi.org/10.17605/OSF.IO/7KM4R
+- Labov, W., Rosenfelder, I., & Fruehwald, J. (2013). One hundred years of
+  sound change in Philadelphia: Linear incrementation, reversal, and
+  reanalysis. *Language*, 89(1), 30–65. https://doi.org/10.1353/lan.2013.0015
+- Patchell, A. E., & Berry, G. M. (2024). TH-stopping in Philadelphia Puerto
+  Rican English. *Language Variation and Change*, 36(1), 73–93.
+  https://doi.org/10.1017/S0954394524000012
 
 ## Appendix — every `[LAB — confirm]` in one place
 

@@ -352,8 +352,20 @@ repository" button).
 
 ## Credits
 
-- **Montreal Forced Aligner** — McAuliffe, Socolof, Mihuc, Wagner & Sonderegger (2017).
-- **new-fave** — Josef Fruehwald; **FAVE** — Rosenfelder et al.
-- **phontrast** (formerly phonJSD) — Grant M. Berry.
+Vowelchemy orchestrates and builds on these tools — cite them when you use it:
+
+- Berry, G. M. (2026). *phontrast: Contrast and separation metrics for
+  phonological categories* (Version 2.4.0) [Computer software].
+  https://doi.org/10.5281/zenodo.21864533 (formerly *phonJSD*)
+- Fruehwald, J. (2024). *new-fave: Vowel formant extraction* [Computer
+  software]. Zenodo. https://doi.org/10.5281/zenodo.14837885
+- McAuliffe, M., Socolof, M., Mihuc, S., Wagner, M., & Sonderegger, M. (2017).
+  Montreal Forced Aligner: Trainable text-speech alignment using Kaldi. In
+  *Proceedings of Interspeech 2017* (pp. 498–502). ISCA.
+  https://doi.org/10.21437/Interspeech.2017-1386
+- Rosenfelder, I., Fruehwald, J., Brickhouse, C., Evanini, K., Seyfarth, S.,
+  Gorman, K., Prichard, H., & Yuan, J. (2022). *FAVE (Forced Alignment and
+  Vowel Extraction)* (Version 2.0.0) [Computer software]. Zenodo.
+  https://doi.org/10.5281/zenodo.22281
 
 Vowelchemy is released under the MIT License (see `LICENSE`).
