@@ -100,7 +100,10 @@ aligner, or R required.
 >
 > (`docker build` looks for `Dockerfile` in the directory you pass — `.` —
 > so "no such file or directory" means you're not in the repo root; either
-> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.)
+> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.
+> Watch the same-name trap: the repo root *contains* an inner `vowelchemy/`
+> package folder — if `ls` shows `api.py` and `cli.py`, you're one level too
+> deep; `cd ..`.)
 >
 > This needs Docker installed *and its daemon running* (on macOS/Windows
 > that means Docker Desktop is open), plus network access to Docker Hub for
