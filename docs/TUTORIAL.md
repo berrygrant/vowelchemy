@@ -59,21 +59,49 @@ No corpus, no aligner, no R needed — just the app.
 
 ### A.1 Install and launch
 
-Open a terminal (Terminal on macOS; PowerShell on Windows) and type these
-lines one at a time, pressing Enter after each. You need Python 3 and git
-installed — if a line answers `command not found`, install them from
-python.org and git-scm.com, or ask a labmate.
+**The no-terminal way (recommended).** Either:
+
+- **Download the ready-made app** — `Vowelchemy-macOS.zip` or
+  `Vowelchemy-Windows.zip` from the project's GitHub **Releases** page.
+  Unzip and double-click it: your browser opens with Vowelchemy running,
+  and a small status window appears — closing that window quits Vowelchemy.
+- **Or use the one-click launcher** — on the project's GitHub page choose
+  **Code ▸ Download ZIP**, unzip, open the folder, and double-click
+  **`Start Vowelchemy (Mac).command`** or
+  **`Start Vowelchemy (Windows).bat`**. The first run installs everything
+  into the folder (a few minutes; if it says Python is missing, install it
+  from python.org and double-click again). Keep the window it opens around;
+  closing it stops Vowelchemy.
+
+First-open warnings are normal for downloads like these: on macOS,
+**right-click the file → Open** the first time instead of double-clicking;
+on Windows SmartScreen, click **More info → Run anyway**.
+
+**The terminal way** (equivalent, and handy later for B.3): open a terminal
+(Terminal on macOS; PowerShell on Windows) and type these lines one at a
+time, pressing Enter after each. You need Python 3 and git — if a line
+answers `command not found`, install them from python.org and git-scm.com.
 
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
+python3 -m venv .venv          # make a private environment for Vowelchemy
+source .venv/bin/activate      # on Windows type:  .venv\Scripts\activate
 pip install .
-vowelchemy app     # serves the app at http://127.0.0.1:8000 — open that URL in your browser
+vowelchemy app     # starts the server and opens the app in your browser
 ```
 
-`vowelchemy app` doesn't open a browser window itself; success looks like the
-terminal printing a running-server message and the page loading when you
-visit **http://127.0.0.1:8000** yourself.
+The two `venv` lines create and enter a *virtual environment* — a private
+folder holding Vowelchemy and everything it needs, so nothing touches your
+system's Python. Don't skip them: without a venv, `pip install .` fails on
+many machines with an `externally-managed-environment` error. Whenever you
+come back in a new terminal, run the `activate` line again before
+`vowelchemy app`. (If any of this misbehaves, fall back to the double-click
+launcher — it does exactly these steps for you.)
+
+Either way, success looks like: your browser showing the Vowelchemy page
+(the terminal or launcher window stays open in the background while you
+work).
 
 The left sidebar shows the six pipeline stages (**1 Corpus → 2 Align →
 3 Extract → 4 Dataset → 5 Visualize → 6 Separation**) and a **Tools** panel
@@ -221,6 +249,13 @@ Vowelchemy groups by whatever columns the demographics file has.
 
 ### B.3 Set up the tools
 
+*(Skip this whole section if your supervisor gave you a pre-extracted vowel
+CSV — you'd jump straight from B.1 to loading it in B.6, and the
+double-click launch from A.1 is all you need. B.3 is only for aligning and
+extracting from raw audio yourself, and it's the one part that genuinely
+needs the terminal: the double-click launchers can't see tools inside a
+conda environment.)*
+
 Part B needs two external tools, and the easiest reliable setup is to put
 *everything* — MFA, new-fave, and Vowelchemy — in one conda environment.
 (conda is a program that manages tool installations; if you don't have it,
@@ -234,6 +269,8 @@ mfa model download acoustic english_us_arpa
 mfa model download dictionary english_us_arpa
 
 # 2. In that SAME environment, install new-fave and Vowelchemy
+#    (the activated conda environment plays the virtual-environment role
+#     here, so plain pip is safe — no separate venv needed)
 pip install new-fave
 cd vowelchemy        # the folder you cloned in A.1
 pip install .

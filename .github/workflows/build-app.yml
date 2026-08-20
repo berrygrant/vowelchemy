@@ -1,0 +1,49 @@
+name: Build desktop app
+
+# Builds the double-clickable Vowelchemy desktop app (PyInstaller) for macOS
+# and Windows. Runs on demand (Actions tab -> "Build desktop app" -> Run
+# workflow) and on version tags, where the builds are attached to the GitHub
+# release so students can download them from the Releases page.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            label: macOS
+          - os: windows-latest
+            label: Windows
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install
+        run: pip install . "pyinstaller>=6"
+      - name: Build
+        run: pyinstaller packaging/desktop/vowelchemy.spec --noconfirm
+      - name: Package (macOS .app -> zip)
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent dist/Vowelchemy.app Vowelchemy-macOS.zip
+      - name: Package (Windows .exe -> zip)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/Vowelchemy.exe -DestinationPath Vowelchemy-Windows.zip
+        shell: pwsh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vowelchemy-${{ matrix.label }}
+          path: Vowelchemy-${{ matrix.label }}.zip
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: Vowelchemy-${{ matrix.label }}.zip
