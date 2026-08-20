@@ -28,6 +28,32 @@ skip straight ahead.
 
 ## Install
 
+### The no-terminal way (for students)
+
+Two options that never open a command line:
+
+- **The desktop app.** Download `Vowelchemy-macOS.zip` or
+  `Vowelchemy-Windows.zip` from the
+  [Releases page](https://github.com/berrygrant/vowelchemy/releases), unzip,
+  and double-click the app. Your browser opens with Vowelchemy running —
+  Python not required. (Maintainers: the Actions workflow **Build desktop
+  app** produces these; run it manually or push a `v*` tag.)
+- **The one-click launcher.** Use **Code ▸ Download ZIP** on this page,
+  unzip, and double-click **`Start Vowelchemy (Mac).command`** or
+  **`Start Vowelchemy (Windows).bat`**. The first run installs everything
+  into a private environment inside the folder (a few minutes; needs
+  [Python 3](https://www.python.org/downloads/) installed); every later run
+  starts straight away.
+
+First-open warnings are normal for unsigned downloads: on macOS,
+**right-click the file → Open** the first time; on Windows SmartScreen,
+**More info → Run anyway**.
+
+Both cover the *analysis* half of the pipeline (demo mode, loading extracted
+CSVs, normalization, plots, separation metrics). Aligning and extracting from
+raw audio still needs MFA / new-fave on your PATH (below) — many students
+never need them, because the lab provides pre-extracted CSVs.
+
 ### 1. The app (Python/FastAPI backend + React front-end)
 
 Vowelchemy is a **FastAPI** backend that exposes the analysis library, plus a
@@ -38,8 +64,10 @@ charts. Install the backend, build the UI once, then launch:
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
 pip install .            # backend (pandas, scipy, plotly, fastapi) + the prebuilt UI
-vowelchemy app           # serves API + UI at http://127.0.0.1:8000
+vowelchemy app           # serves API + UI at http://127.0.0.1:8000 and opens your browser
 ```
+
+(`--no-browser` suppresses the auto-open; `--port` changes the port.)
 
 The backend pulls in only lightweight scientific-Python packages plus FastAPI.
 You can explore the entire analysis, visualization, and separation-metrics
@@ -275,6 +303,9 @@ its own); the backend is thin glue that also produces the Plotly charts as JSON;
 React renders them with plotly.js and never re-implements chart logic.
 
 ```
+Start Vowelchemy (Mac).command    # double-click launcher (self-installing)
+Start Vowelchemy (Windows).bat    # double-click launcher (self-installing)
+packaging/desktop/    # PyInstaller desktop app (entry + spec; built by CI)
 vowelchemy/           # Python library + API (pip installable)
   api.py              # FastAPI backend — exposes the library over JSON
   cli.py              # command-line entry point (`vowelchemy …`)

@@ -22,9 +22,27 @@ from pathlib import Path
 from .constants import DEFAULT_ACOUSTIC_MODEL, DEFAULT_DICTIONARY
 
 
+def _open_when_ready(url: str, timeout: float = 60.0) -> None:
+    """Poll ``url`` until the server answers, then open it in the default browser."""
+    import time
+    import urllib.request
+    import webbrowser
+
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            urllib.request.urlopen(url, timeout=1)
+        except OSError:
+            time.sleep(0.3)
+        else:
+            webbrowser.open(url)
+            return
+
+
 def _cmd_app(args: argparse.Namespace) -> int:
     import importlib.util
     import subprocess
+    import threading
 
     from . import webui_dir
 
@@ -36,7 +54,10 @@ def _cmd_app(args: argparse.Namespace) -> int:
         print("Note: the React front-end has not been built yet. Serving the API only.\n"
               "      Build it with:  vowelchemy setup\n"
               "      or run the dev server:  cd frontend && npm run dev\n", file=sys.stderr)
-    print(f"Vowelchemy running at http://127.0.0.1:{port}  (API under /api)")
+    url = f"http://127.0.0.1:{port}"
+    print(f"Vowelchemy running at {url}  (API under /api; Ctrl+C to stop)")
+    if not args.no_browser:
+        threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
     cmd = [sys.executable, "-m", "uvicorn", "vowelchemy.api:app",
            "--host", "127.0.0.1", "--port", str(port)]
     if args.reload:
@@ -219,6 +240,8 @@ def build_parser() -> argparse.ArgumentParser:
     a = sub.add_parser("app", help="launch the API + React app (uvicorn)")
     a.add_argument("--port", type=int, default=None)
     a.add_argument("--reload", action="store_true", help="auto-reload (development)")
+    a.add_argument("--no-browser", action="store_true", dest="no_browser",
+                   help="don't open the app in a browser once the server is up")
     a.set_defaults(func=_cmd_app)
 
     setup = sub.add_parser("setup", help="build the React UI (needs Node)")
