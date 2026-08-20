@@ -3,17 +3,19 @@ import { api } from '../api'
 import type { Ctx, GroupingColumns, PlotlyFigure, VowelInfo } from '../types'
 import { Card, Field, MultiSelect, Notice } from '../components/ui'
 import { PlotlyChart } from '../components/PlotlyChart'
+import { PathInput } from '../components/PathInput'
+import { NON_GROUPING_COLUMNS, groupableColumns } from '../lib'
+import { useBusy } from '../hooks/useBusy'
 
 type Tab = 'cross' | 'space' | 'ridge' | 'traj'
-const EXCLUDE = ['vowel_label', 'vowel_canon', 'speaker', 'vowel']
-const CONTEXT = ['pre_seg', 'fol_seg', 'pre_word', 'fol_word', 'stress', 'word']
 
 // Prefer a sociodemographic column (Age Group, Sex, …) over phonetic-context
-// columns as the default grouping factor.
-function preferredGroup(columns: string[]): string {
-  const cands = columns.filter((c) => !EXCLUDE.includes(c))
+// columns (schema-detected, served as grouping.context_columns) as the
+// default grouping factor.
+function preferredGroup(columns: string[], context: string[]): string {
+  const cands = columns.filter((c) => !NON_GROUPING_COLUMNS.includes(c))
   const score = (c: string) =>
-    /age|group/i.test(c) ? 0 : /sex|gender|dialect|region|class|ethnic/i.test(c) ? 1 : CONTEXT.includes(c) ? 3 : 2
+    /age|group/i.test(c) ? 0 : /sex|gender|dialect|region|class|ethnic/i.test(c) ? 1 : context.includes(c) ? 3 : 2
   return [...cands].sort((a, b) => score(a) - score(b))[0] ?? columns[0] ?? ''
 }
 
@@ -42,9 +44,9 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
   const [trajValue, setTrajValue] = useState('F1_norm')
   const [trajVowels, setTrajVowels] = useState<string[]>([])
   const [tracksPath, setTracksPath] = useState('')
-  const [loadingTracks, setLoadingTracks] = useState(false)
   const [trajVowelOpts, setTrajVowelOpts] = useState<{ value: string; label: string }[]>([])
   const tracksLoaded = ctx.status?.data.tracks_loaded
+  const { busy: loadingTracks, error: tracksError, run: runTracks } = useBusy()
 
   useEffect(() => {
     if (tracksLoaded) {
@@ -57,31 +59,17 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
     }
   }, [tracksLoaded])
 
-  const loadDemoTracks = async () => {
-    setLoadingTracks(true)
-    setError('')
-    try {
+  const loadDemoTracks = () =>
+    runTracks(async () => {
       await api.post('/api/tracks/demo')
       await ctx.refresh()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoadingTracks(false)
-    }
-  }
+    })
 
-  const loadTracksPath = async () => {
-    setLoadingTracks(true)
-    setError('')
-    try {
+  const loadTracksPath = () =>
+    runTracks(async () => {
       await api.post('/api/tracks/load', { csv_path: tracksPath })
       await ctx.refresh()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setLoadingTracks(false)
-    }
-  }
+    })
 
   useEffect(() => {
     if (!loaded) return
@@ -90,7 +78,7 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
         const [g, v] = await Promise.all([api.get('/api/grouping-columns'), api.get('/api/vowels')])
         setGrouping(g)
         setVowels(v)
-        const firstDemo = preferredGroup(g.columns)
+        const firstDemo = preferredGroup(g.columns, g.context_columns ?? [])
         setCrossX((x) => x || firstDemo)
         setRidgeGroup((x) => x || firstDemo)
         setCrossFormant((f) => (g.norm_formants.includes(f) ? f : g.norm_formants[0] ?? f))
@@ -172,7 +160,7 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
     )
   }
 
-  const demoCols = (grouping?.columns ?? []).filter((c) => !EXCLUDE.includes(c))
+  const demoCols = groupableColumns(grouping)
   const formants = grouping?.norm_formants ?? ['F1_norm', 'F2_norm']
   const vowelOpts = vowels.map((v) => ({ value: v.vowel, label: v.keyword ?? v.vowel }))
 
@@ -308,16 +296,20 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
                   <button className="btn btn-small" onClick={loadDemoTracks} disabled={loadingTracks}>
                     ✨ Load demo trajectories
                   </button>
-                  <input
-                    className="grow"
-                    value={tracksPath}
-                    onChange={(e) => setTracksPath(e.target.value)}
-                    placeholder="…or a tracks CSV path on the server"
-                  />
+                  <div className="grow">
+                    <PathInput
+                      value={tracksPath}
+                      onChange={setTracksPath}
+                      mode="file"
+                      exts="csv,tsv"
+                      placeholder="…or a tracks CSV path on the server"
+                    />
+                  </div>
                   <button className="btn btn-small" onClick={loadTracksPath} disabled={!tracksPath || loadingTracks}>
                     Load
                   </button>
                 </div>
+                {tracksError && <Notice kind="error">{tracksError}</Notice>}
               </Notice>
             ) : (
               <>

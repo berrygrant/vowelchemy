@@ -13,7 +13,10 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    // Build INTO the Python package so the UI ships inside the wheel and
+    // `pip install vowelchemy && vowelchemy app` serves it from anywhere.
+    outDir: '../vowelchemy/webui',
+    emptyOutDir: true,
     chunkSizeWarningLimit: 4000,
   },
 })

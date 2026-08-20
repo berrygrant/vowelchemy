@@ -93,20 +93,11 @@ TEXTGRID_EXTENSIONS = {".textgrid"}  # compared against suffix.lower()
 # Tier names (lower-cased) that indicate a *phone*-level alignment exists.
 # MFA emits "words" + "phones"; FAVE alignments use "phone"; other aligners vary.
 PHONE_TIER_NAMES = {"phones", "phone", "phon", "segment", "segments", "seg", "mau"}
-WORD_TIER_NAMES = {"words", "word", "ort", "ortho", "orthography"}
 
 # Default MFA English models (ARPABET). Users can override in the UI.
 DEFAULT_ACOUSTIC_MODEL = "english_us_arpa"
 DEFAULT_DICTIONARY = "english_us_arpa"
 
-# Normalization method identifiers. Lobanov is the ANAE/Labov default.
-NORMALIZATION_METHODS = (
-    "lobanov",
-    "labov_anae",
-    "nearey",
-    "nearey1",
-    "bark",
-    "watt_fabricius",
-    "none",
-)
+# The default normalization method (the ANAE/Labov-tradition standard).
+# The authoritative method registry lives in normalization.available_methods().
 DEFAULT_NORMALIZATION = "lobanov"

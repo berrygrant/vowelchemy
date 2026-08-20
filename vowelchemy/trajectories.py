@@ -19,7 +19,7 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 
-from .constants import canonical_vowel
+from .analysis import canonical_vowel_series
 from .schema import ColumnSchema
 
 
@@ -60,8 +60,9 @@ def mean_trajectories(
 ) -> pd.DataFrame:
     """Average trajectory per vowel (× group) over ``n_steps`` normalized-time bins.
 
-    Returns tidy rows: ``vowel``, [``group``], ``step`` (0…n_steps-1),
-    ``<formant>_mean`` for each formant, and ``n`` tokens contributing.
+    Returns tidy rows: ``vowel``, [``group``], ``step`` (0…n_steps-1), the mean
+    of each formant under its original column name (e.g. ``F1_norm``), and
+    ``n`` tokens contributing.
     """
     if formants is None:
         formants = [c for c in ("F1_norm", "F2_norm") if c in df.columns] or [
@@ -70,8 +71,7 @@ def mean_trajectories(
     d = df.copy()
     d["_nt"] = normalized_time(d, track)
     d["_step"] = np.clip((d["_nt"] * n_steps).astype(int), 0, n_steps - 1)
-    vcol = "vowel_canon" if "vowel_canon" in d.columns else schema.require("vowel")
-    d["_vowel"] = d[vcol] if vcol == "vowel_canon" else d[vcol].map(canonical_vowel)
+    d["_vowel"] = canonical_vowel_series(d, schema)
 
     keys = ["_vowel"] + ([group_by] if group_by and group_by in d.columns else []) + ["_step"]
     agg = {f: "mean" for f in formants}

@@ -1,0 +1,59 @@
+cff-version: 1.2.0
+message: "If you use vowelchemy in your research, please cite it as below."
+type: software
+title: "vowelchemy: A lab-friendly sociophonetics pipeline for normalized, analyzable vowel data"
+authors:
+  - family-names: Berry
+    given-names: Grant M.
+    email: berry.grant@gmail.com
+version: 0.1.0
+# date-released: YYYY-MM-DD   # set on first tagged release
+# doi: 10.5281/zenodo.XXXXXXX # add after archiving a release on Zenodo
+repository-code: "https://github.com/berrygrant/vowelchemy"
+url: "https://github.com/berrygrant/vowelchemy"
+license: MIT
+keywords:
+  - sociophonetics
+  - vowel normalization
+  - vowel merger
+  - Jensen-Shannon divergence
+  - forced alignment
+  - formant extraction
+abstract: >-
+  Vowelchemy turns conversational speech corpora into normalized, analyzable
+  vowel data: forced alignment (Montreal Forced Aligner), formant extraction
+  (new-fave), vowel normalization (Lobanov, Labov-ANAE, Nearey, Bark,
+  Watt-Fabricius), and category-separation metrics (Jensen-Shannon Divergence,
+  Pillai trace, Bhattacharyya overlap) with an interactive web front-end.
+  See docs/REFERENCES.md for the methods literature the pipeline implements.
+references:
+  - type: software
+    title: "phontrast: Contrast and Separation Metrics for Phonological Categories"
+    authors:
+      - family-names: Berry
+        given-names: Grant M.
+    doi: 10.5281/zenodo.21864533
+    repository-code: "https://github.com/berrygrant/phontrast"
+  - type: conference-paper
+    title: "Montreal Forced Aligner: Trainable text-speech alignment using Kaldi"
+    authors:
+      - family-names: McAuliffe
+        given-names: Michael
+      - family-names: Socolof
+        given-names: Michaela
+      - family-names: Mihuc
+        given-names: Sarah
+      - family-names: Wagner
+        given-names: Michael
+      - family-names: Sonderegger
+        given-names: Morgan
+    year: 2017
+    doi: 10.21437/Interspeech.2017-1386
+  - type: software
+    title: "new-fave: Vowel formant extraction"
+    authors:
+      - family-names: Fruehwald
+        given-names: Josef
+    year: 2024
+    doi: 10.5281/zenodo.14837885
+    repository-code: "https://github.com/Forced-Alignment-and-Vowel-Extraction/new-fave"

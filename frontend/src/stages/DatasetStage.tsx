@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { Ctx, GroupingColumns, NormMethod, TablePayload, VowelInfo } from '../types'
 import { Button, Card, Field, MultiSelect, Notice } from '../components/ui'
 import { DataTable } from '../components/DataTable'
+import { useBusy } from '../hooks/useBusy'
 
 const SCHEMA_FIELDS = ['speaker', 'vowel', 'f1', 'f2', 'f3', 'duration', 'word', 'stress']
 const NONE = '— none —'
@@ -24,8 +25,7 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
   const [outlierSd, setOutlierSd] = useState(2.5)
   const [normParams, setNormParams] = useState<{ g_value?: number; corner_high?: string; corner_low?: string }>({})
   const [table, setTable] = useState<TablePayload | null>(null)
-  const [error, setError] = useState('')
-  const [busy, setBusy] = useState(false)
+  const { busy, error, setError, run } = useBusy()
 
   const load = useCallback(async () => {
     setError('')
@@ -46,17 +46,15 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
     } catch (e) {
       setError((e as Error).message)
     }
-  }, [ctx.status?.data.norm_method])
+  }, [ctx.status?.data.norm_method, setError])
 
   useEffect(() => {
     if (loaded) load()
   }, [loaded, load])
 
   const build = useCallback(
-    async (vowelsSel = selectedVowels, filtCols = filterCols, filtVals = filterValues) => {
-      setBusy(true)
-      setError('')
-      try {
+    (vowelsSel = selectedVowels, filtCols = filterCols, filtVals = filterValues) =>
+      run(async () => {
         const filters: Record<string, string[]> = {}
         for (const c of filtCols) filters[c] = filtVals[c] ?? grouping?.values[c] ?? []
         const res = (await api.post('/api/dataset', {
@@ -66,13 +64,8 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
           outlier_sd: outlierSd,
         })) as TablePayload
         setTable(res)
-      } catch (e) {
-        setError((e as Error).message)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [selectedVowels, filterCols, filterValues, grouping, removeOutliers, outlierSd],
+      }),
+    [selectedVowels, filterCols, filterValues, grouping, removeOutliers, outlierSd, run],
   )
 
   // Auto-preview once options are available.
@@ -81,65 +74,39 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded, grouping])
 
-  const applySchema = async () => {
-    setBusy(true)
-    try {
+  const applySchema = () =>
+    run(async () => {
       const clean: Record<string, string> = {}
       for (const [k, v] of Object.entries(overrides)) if (v && v !== NONE) clean[k] = v
       const res = await api.post('/api/schema', { overrides: clean })
       setMissing(res.missing_required)
       await ctx.refresh()
       await load()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
-  const applyNorm = async (method: string, params: typeof normParams = normParams) => {
+  const applyNorm = (method: string, params: typeof normParams = normParams) => {
     setNormMethod(method)
     setNormParams(params)
-    setBusy(true)
-    try {
+    return run(async () => {
       const res = await api.post('/api/normalization', { method, ...params })
       setNormUnits(res.units)
       await ctx.refresh()
       await build()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
+    })
   }
 
-  const uploadDemographics = async (file: File) => {
-    setBusy(true)
-    try {
-      await api.upload('/api/demographics/upload', file)
+  const uploadTable = (endpoint: string) => (file: File) =>
+    run(async () => {
+      await api.upload(endpoint, file)
       await ctx.refresh()
       await load()
       await build()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
+  const uploadDemographics = uploadTable('/api/demographics/upload')
+  const uploadVowelMap = uploadTable('/api/vowelmap/upload')
 
-  const uploadVowelMap = async (file: File) => {
-    setBusy(true)
-    try {
-      await api.upload('/api/vowelmap/upload', file)
-      await ctx.refresh()
-      await load()
-      await build()
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+  const downloadCsv = () =>
+    run(() => api.download('/api/dataset/csv', 'vowelchemy_dataset.csv'))
 
   if (!loaded) {
     return (
@@ -296,7 +263,7 @@ export function DatasetStage({ ctx }: { ctx: Ctx }) {
             <p className="muted">
               <b>{table.n_total.toLocaleString()}</b> tokens × {table.columns.length} columns
             </p>
-            <Button primary onClick={() => api.download('/api/dataset/csv', 'vowelchemy_dataset.csv')}>
+            <Button primary onClick={downloadCsv}>
               ⬇️ Download CSV
             </Button>
           </div>

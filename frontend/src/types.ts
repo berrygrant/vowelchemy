@@ -5,7 +5,7 @@ export interface ToolInfo {
 }
 
 export interface Status {
-  tools: { mfa: ToolInfo; newfave: ToolInfo; phonjsd: ToolInfo }
+  tools: { mfa: ToolInfo; newfave: ToolInfo; phontrast: ToolInfo }
   data: {
     loaded: boolean
     n_tokens: number
@@ -72,6 +72,7 @@ export interface ScanResult {
 export interface GroupingColumns {
   columns: string[]
   values: Record<string, string[]>
+  context_columns?: string[]
   norm_formants: string[]
 }
 
@@ -80,7 +81,7 @@ export interface SeparationResult {
   figure_bar: PlotlyFigure | null
   figure_matrix: PlotlyFigure | null
   full_csv?: string
-  phonjsd: {
+  phontrast: {
     ok?: boolean
     log?: string
     notes?: string[]

@@ -26,18 +26,39 @@ from .schema import _ALIASES, ColumnSchema
 _NON_GROUPING_ROLES = {"f1", "f2", "f3", "time", "token_id", "duration"}
 
 
-def load_vowel_data(path: str | Path) -> pd.DataFrame:
-    """Read an extracted-vowel CSV (comma or tab separated, auto-sniffed)."""
+def read_table(path: str | Path) -> pd.DataFrame:
+    """Read a tabular file (comma or tab separated, auto-sniffed).
+
+    The single loader used for vowel data, demographics, and formant tracks —
+    ``.tsv``/``.tab`` force a tab delimiter; anything else is sniffed
+    (``sep=None`` with the python engine).
+    """
     path = Path(path)
     sep = "\t" if path.suffix.lower() in {".tsv", ".tab"} else None
-    # sep=None with the python engine sniffs the delimiter.
     return pd.read_csv(path, sep=sep, engine="python")
+
+
+def load_vowel_data(path: str | Path) -> pd.DataFrame:
+    """Read an extracted-vowel table (comma or tab separated, auto-sniffed)."""
+    return read_table(path)
 
 
 def load_demographics(path: str | Path) -> pd.DataFrame:
-    path = Path(path)
-    sep = "\t" if path.suffix.lower() in {".tsv", ".tab"} else None
-    return pd.read_csv(path, sep=sep, engine="python")
+    """Read a speaker-demographics table (comma or tab separated)."""
+    return read_table(path)
+
+
+def canonical_vowel_series(df: pd.DataFrame, schema: ColumnSchema) -> pd.Series:
+    """The canonical (bare-ARPABET) vowel label for every row.
+
+    Uses the precomputed ``vowel_canon`` column when :func:`add_vowel_labels`
+    has run, else maps the schema's vowel column through
+    :func:`~vowelchemy.constants.canonical_vowel`.  The one shared definition of
+    "which vowel is this row" used by analysis, metrics, and trajectories.
+    """
+    if "vowel_canon" in df.columns:
+        return df["vowel_canon"]
+    return df[schema.require("vowel")].map(canonical_vowel)
 
 
 def _find_speaker_column(df: pd.DataFrame) -> Optional[str]:
@@ -105,9 +126,7 @@ def add_vowel_labels(
 
 def list_vowels(df: pd.DataFrame, schema: ColumnSchema) -> pd.DataFrame:
     """Return a table of available vowels with token counts, most frequent first."""
-    vowel = schema.require("vowel")
-    canon = df[vowel].map(canonical_vowel)
-    counts = canon.value_counts(dropna=False)
+    counts = canonical_vowel_series(df, schema).value_counts(dropna=False)
     return pd.DataFrame(
         {
             "vowel": counts.index,
@@ -127,13 +146,11 @@ def select_vowels(
     Unresolvable names fall back to a direct canonical match so custom codes
     still work.
     """
-    vowel = schema.require("vowel")
     wanted: set[str] = set()
     for v in vowels:
         resolved = resolve_vowel(v)
         wanted.add(resolved if resolved else canonical_vowel(v))
-    canon = df[vowel].map(canonical_vowel)
-    return df[canon.isin(wanted)].copy()
+    return df[canonical_vowel_series(df, schema).isin(wanted)].copy()
 
 
 def candidate_grouping_columns(
@@ -219,14 +236,12 @@ def flag_outliers(
     speaker×vowel cell.
     """
     spk = schema.require("speaker")
-    vowel_col = "vowel_canon" if "vowel_canon" in df.columns else schema.require("vowel")
     if value_columns is None:
         value_columns = schema.formant_columns()
 
     out = df.copy()
-    key = [spk, vowel_col]
     flags = np.zeros(len(out), dtype=bool)
-    grouped = out.groupby(key, dropna=False)
+    grouped = out.groupby([out[spk], canonical_vowel_series(out, schema)], dropna=False)
     for col in value_columns:
         mean = grouped[col].transform("mean")
         sd = grouped[col].transform("std")

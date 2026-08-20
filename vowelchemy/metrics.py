@@ -1,4 +1,4 @@
-"""Vowel separation / overlap metrics — the "phonJSD" step.
+"""Vowel separation / overlap metrics — the "phontrast" step.
 
 The headline metric is the **Jensen-Shannon Divergence (JSD)** between two
 vowel categories' distributions in (normalized) formant space.  JSD is a
@@ -22,17 +22,23 @@ Two companion metrics are reported alongside JSD for triangulation:
   ``0`` = complete overlap, higher = more separated (widely used for merger work).
 * **Bhattacharyya overlap** — analytic overlap coefficient of two Gaussians;
   ``1`` = identical, ``0`` = disjoint (the complement sense of JSD).
+
+References: Lin (1991) for JSD; Pillai (1955), with Hay, Warren & Drager (2006)
+and Nycz & Hall-Lew (2013) for its use in merger research; Bhattacharyya (1943)
+and Johnson (2015, NWAV 44) for the overlap coefficient.  Full citations in
+``docs/REFERENCES.md``.
 """
 
 from __future__ import annotations
 
 import itertools
-from dataclasses import dataclass, field
-from typing import Optional, Sequence
+from dataclasses import dataclass
+from typing import Optional, Sequence, Union
 
 import numpy as np
 import pandas as pd
 
+from .analysis import canonical_vowel_series
 from .constants import canonical_vowel, vowel_display_label
 from .schema import ColumnSchema
 
@@ -53,9 +59,9 @@ class SeparationResult:
     pillai_p: Optional[float] = None
     group: Optional[str] = None
     group_value: Optional[object] = None
+    # The density estimator actually used for JSD: "kde", "gaussian" (sparse-
+    # cell fallback), or "kde+gaussian" when the two categories differed.
     method: str = "kde"
-    dimensions: tuple[str, ...] = ()
-    notes: list[str] = field(default_factory=list)
 
     def as_row(self) -> dict:
         return {
@@ -120,31 +126,40 @@ def jensen_shannon_divergence(
     points_b: np.ndarray,
     method: str = "kde",
     grid_size: Optional[int] = None,
-) -> float:
+    detail: bool = False,
+) -> Union[float, tuple[float, str]]:
     """JSD (base-2, in [0, 1]) between two point clouds via grid integration.
 
     ``points_a`` / ``points_b`` are ``(n, D)`` arrays with ``D`` in {1, 2}.
     Returns ``nan`` if either cloud is too small to estimate a density.
+
+    With ``detail=True``, returns ``(jsd, estimator)`` where ``estimator`` names
+    the density fit actually used — ``"kde"``, ``"gaussian"`` (the sparse-cell
+    fallback), or ``"kde+gaussian"`` when the two categories differed.
     """
+    def _done(value: float, estimator: str = method):
+        return (value, estimator) if detail else value
+
     a = np.asarray(points_a, dtype=float)
     b = np.asarray(points_b, dtype=float)
     a = a[~np.isnan(a).any(axis=1)]
     b = b[~np.isnan(b).any(axis=1)]
     if len(a) < 2 or len(b) < 2:
-        return float("nan")
+        return _done(float("nan"))
 
     d = a.shape[1]
     if grid_size is None:
         grid_size = 400 if d == 1 else 120
 
     grid = _shared_grid(a, b, grid_size)
-    dens_a, _ = _fit_density(a, method)
-    dens_b, _ = _fit_density(b, method)
+    dens_a, method_a = _fit_density(a, method)
+    dens_b, method_b = _fit_density(b, method)
+    used = method_a if method_a == method_b else f"{method_a}+{method_b}"
     p = np.clip(dens_a(grid), 0, None)
     q = np.clip(dens_b(grid), 0, None)
     p_sum, q_sum = p.sum(), q.sum()
     if p_sum <= 0 or q_sum <= 0:
-        return float("nan")
+        return _done(float("nan"), used)
     p = p / p_sum
     q = q / q_sum
     m = 0.5 * (p + q)
@@ -154,7 +169,7 @@ def jensen_shannon_divergence(
         return float(np.sum(x[mask] * np.log2(x[mask] / (y[mask] + _EPS))))
 
     jsd = 0.5 * _kl(p, m) + 0.5 * _kl(q, m)
-    return float(np.clip(jsd, 0.0, 1.0))
+    return _done(float(np.clip(jsd, 0.0, 1.0)), used)
 
 
 # --------------------------------------------------------------------------- #
@@ -296,17 +311,17 @@ def pair_separation(
     permutation p-value for Pillai.
     """
     dims = _resolve_dimensions(df, dimensions)
-    vowel_col = "vowel_canon" if "vowel_canon" in df.columns else schema.require("vowel")
-    canon = df[vowel_col].map(canonical_vowel) if vowel_col != "vowel_canon" else df[vowel_col]
+    canon = canonical_vowel_series(df, schema)
     a = df.loc[canon == canonical_vowel(vowel_a), dims].to_numpy(dtype=float)
     b = df.loc[canon == canonical_vowel(vowel_b), dims].to_numpy(dtype=float)
 
-    notes: list[str] = []
-    if not dims:
-        notes.append("No formant dimensions available for separation.")
-    jsd = jensen_shannon_divergence(a, b, method=method) if dims else float("nan")
-    pillai = pillai_score(a, b) if dims else float("nan")
-    bhatt = bhattacharyya_overlap(a, b) if dims else float("nan")
+    used = method
+    if dims:
+        jsd, used = jensen_shannon_divergence(a, b, method=method, detail=True)
+        pillai = pillai_score(a, b)
+        bhatt = bhattacharyya_overlap(a, b)
+    else:
+        jsd = pillai = bhatt = float("nan")
     jsd_lo = jsd_hi = pil_p = None
     if dims and bootstrap > 0 and not np.isnan(jsd):
         jsd_lo, jsd_hi = jsd_ci(a, b, n_boot=bootstrap, method=method)
@@ -325,9 +340,7 @@ def pair_separation(
         pillai_p=pil_p,
         group=group,
         group_value=group_value,
-        method=method,
-        dimensions=tuple(dims),
-        notes=notes,
+        method=used,
     )
 
 
@@ -349,14 +362,10 @@ def pairwise_separation(
     to get one row per (group level × vowel pair).  ``bootstrap``/``permutations``
     add JSD CIs and a Pillai permutation p-value.
     """
-    vowel_col = "vowel_canon" if "vowel_canon" in df.columns else schema.require("vowel")
-    canon_all = (
-        df[vowel_col].map(canonical_vowel) if vowel_col != "vowel_canon" else df[vowel_col]
-    )
     if vowels:
         wanted = [canonical_vowel(v) for v in vowels]
     else:
-        wanted = sorted(canon_all.dropna().unique())
+        wanted = sorted(canonical_vowel_series(df, schema).dropna().unique())
     pairs = list(itertools.combinations(sorted(set(wanted)), 2))
 
     frames: list[tuple[Optional[object], pd.DataFrame]] = []
@@ -368,11 +377,7 @@ def pairwise_separation(
 
     rows: list[dict] = []
     for gval, sub in frames:
-        sub_canon = (
-            sub[vowel_col].map(canonical_vowel)
-            if vowel_col != "vowel_canon"
-            else sub[vowel_col]
-        )
+        sub_canon = canonical_vowel_series(sub, schema)
         for va, vb in pairs:
             if (sub_canon == va).sum() < min_tokens or (sub_canon == vb).sum() < min_tokens:
                 continue
