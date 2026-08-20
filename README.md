@@ -129,6 +129,11 @@ Jump to **5 · Visualize** to build *BET/BEET F1 by Age Group*, or **6 ·
 Separation** to watch the LOT~THOUGHT JSD fall from ~0.96 (older) to ~0.10
 (younger).
 
+**New to research?** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) is a guided
+walkthrough for undergraduate researchers — a demo warm-up, then a complete
+real-corpus study (question → hypothesis → analysis → interpretation →
+write-up), using the lab's PREP corpus as the worked example.
+
 ---
 
 ## The pipeline, stage by stage
@@ -298,6 +303,7 @@ frontend/             # React + Vite + TypeScript single-page app (source)
   src/api.ts          # typed fetch client (session-aware)
   src/lib.ts          # shared utils (downloads, CSV, grouping columns)
 examples/             # ready-to-use demo CSVs
+docs/TUTORIAL.md      # guided first study for undergrads (demo warm-up + PREP corpus)
 docs/REFERENCES.md    # the methods literature, with a feature → citation map
 docs/FEATURE_AUDIT.md # detailed feature inventory & test-coverage map
 docs/QOL_AUDIT.md     # usability audit (student + researcher) & roadmap
@@ -346,8 +352,20 @@ repository" button).
 
 ## Credits
 
-- **Montreal Forced Aligner** — McAuliffe, Socolof, Mihuc, Wagner & Sonderegger (2017).
-- **new-fave** — Josef Fruehwald; **FAVE** — Rosenfelder et al.
-- **phontrast** (formerly phonJSD) — Grant M. Berry.
+Vowelchemy orchestrates and builds on these tools — cite them when you use it:
+
+- Berry, G. M. (2026). *phontrast: Contrast and separation metrics for
+  phonological categories* (Version 2.4.0) [Computer software].
+  https://doi.org/10.5281/zenodo.21864533 (formerly *phonJSD*)
+- Fruehwald, J. (2024). *new-fave: Vowel formant extraction* [Computer
+  software]. Zenodo. https://doi.org/10.5281/zenodo.14837885
+- McAuliffe, M., Socolof, M., Mihuc, S., Wagner, M., & Sonderegger, M. (2017).
+  Montreal Forced Aligner: Trainable text-speech alignment using Kaldi. In
+  *Proceedings of Interspeech 2017* (pp. 498–502). ISCA.
+  https://doi.org/10.21437/Interspeech.2017-1386
+- Rosenfelder, I., Fruehwald, J., Brickhouse, C., Evanini, K., Seyfarth, S.,
+  Gorman, K., Prichard, H., & Yuan, J. (2022). *FAVE (Forced Alignment and
+  Vowel Extraction)* (Version 2.0.0) [Computer software]. Zenodo.
+  https://doi.org/10.5281/zenodo.22281
 
 Vowelchemy is released under the MIT License (see `LICENSE`).
