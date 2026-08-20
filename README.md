@@ -86,7 +86,7 @@ workflow immediately using **Demo mode** (a button in the sidebar) — no corpus
 aligner, or R required.
 
 > **No Node needed.** The built UI is committed inside the package
-> (`vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
+> (`src/vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
 > `vowelchemy app` serves it from any directory. After changing frontend
 > source, rebuild with `vowelchemy setup` (needs Node ≥ 18).
 >
@@ -101,9 +101,8 @@ aligner, or R required.
 > (`docker build` looks for `Dockerfile` in the directory you pass — `.` —
 > so "no such file or directory" means you're not in the repo root; either
 > `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.
-> Watch the same-name trap: the repo root *contains* an inner `vowelchemy/`
-> package folder — if `ls` shows `api.py` and `cli.py`, you're one level too
-> deep; `cd ..`.)
+> If `ls` shows `api.py` and `cli.py`, you're inside the package folder
+> (`src/vowelchemy/`) — go up to the repo root.)
 >
 > This needs Docker installed *and its daemon running* (on macOS/Windows
 > that means Docker Desktop is open), plus network access to Docker Hub for
@@ -331,7 +330,8 @@ React renders them with plotly.js and never re-implements chart logic.
 Start Vowelchemy (Mac).command    # double-click launcher (self-installing)
 Start Vowelchemy (Windows).bat    # double-click launcher (self-installing)
 packaging/desktop/    # PyInstaller desktop app (entry + spec; built by CI)
-vowelchemy/           # Python library + API (pip installable)
+src/vowelchemy/       # Python library + API (pip installable; src layout, so
+                      # the repo root has no folder with the package's name)
   api.py              # FastAPI backend — exposes the library over JSON
   cli.py              # command-line entry point (`vowelchemy …`)
   corpus.py           # discovery, pairing, alignment detection, autodetect + browse
@@ -384,7 +384,7 @@ pytest                        # library + API tests
 cd frontend
 npm install
 npm run dev                   # hot-reloading UI at http://localhost:5173
-npm run build                 # production build → vowelchemy/webui (commit it)
+npm run build                 # production build → src/vowelchemy/webui (commit it)
 ```
 
 The Python tests cover the schema, normalization math (Lobanov, Labov-ANAE,

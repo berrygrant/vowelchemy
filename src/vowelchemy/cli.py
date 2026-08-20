@@ -149,7 +149,8 @@ def _cmd_setup(args: argparse.Namespace) -> int:
 
     from . import webui_dir
 
-    frontend = Path(__file__).resolve().parent.parent / "frontend"
+    # src layout: package lives at <repo>/src/vowelchemy, frontend at <repo>/frontend.
+    frontend = Path(__file__).resolve().parents[2] / "frontend"
     if not frontend.is_dir():
         print("frontend/ directory not found next to the package "
               "(a source checkout is required to rebuild the UI).", file=sys.stderr)
