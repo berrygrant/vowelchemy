@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { api } from '../api'
-import type { Ctx } from '../types'
+import type { Ctx, JobSnapshot } from '../types'
 import { Button, Card, Field, LogBox, Notice } from '../components/ui'
 import { ProgressBar } from '../components/ProgressBar'
 import { PathInput } from '../components/PathInput'
+import { useBusy } from '../hooks/useBusy'
 import { useJob } from '../hooks/useJob'
 
 export function ExtractStage({ ctx }: { ctx: Ctx }) {
@@ -12,58 +13,36 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
   const [outputDir, setOutputDir] = useState('')
   const [excludeOverlaps, setExcludeOverlaps] = useState(true)
   const [csvPath, setCsvPath] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
-  const [refreshed, setRefreshed] = useState(false)
-  const { job, error: jobError, start, running } = useJob('vowelchemy-job-extract')
+  const { busy, error, run } = useBusy()
+
+  const onDone = async (snap: JobSnapshot) => {
+    await ctx.refresh()
+    if ((snap.result as { ok?: boolean } | null)?.ok) ctx.go('dataset')
+  }
+  const { job, error: jobError, start, running } = useJob('vowelchemy-job-extract', onDone)
 
   const result = job?.result as { ok?: boolean; n_tokens?: number; notes?: string[] } | null | undefined
 
-  useEffect(() => {
-    if (job?.status === 'done' && !refreshed) {
-      setRefreshed(true)
-      ctx.refresh().then(() => {
-        if (result?.ok) ctx.go('dataset')
-      })
-    }
-  }, [job?.status, refreshed, ctx, result])
-
-  const run = () => {
-    setRefreshed(false)
+  const runExtract = () =>
     start('/api/extract', {
       aligned_dir: alignedDir || null,
       output_dir: outputDir || null,
       exclude_overlaps: excludeOverlaps,
     })
-  }
 
-  const loadCsv = async () => {
-    setBusy(true)
-    setError('')
-    try {
+  const loadCsv = () =>
+    run(async () => {
       await api.post('/api/voweldata/load', { csv_path: csvPath })
       await ctx.refresh()
       ctx.go('dataset')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
-  const uploadCsv = async (file: File) => {
-    setBusy(true)
-    setError('')
-    try {
+  const uploadCsv = (file: File) =>
+    run(async () => {
       await api.upload('/api/voweldata/upload', file)
       await ctx.refresh()
       ctx.go('dataset')
-    } catch (e) {
-      setError((e as Error).message)
-    } finally {
-      setBusy(false)
-    }
-  }
+    })
 
   return (
     <div className="stage">
@@ -113,7 +92,7 @@ export function ExtractStage({ ctx }: { ctx: Ctx }) {
             <input type="checkbox" checked={excludeOverlaps} onChange={(e) => setExcludeOverlaps(e.target.checked)} />
             Exclude overlapping speech
           </label>
-          <Button primary onClick={run} busy={running}>
+          <Button primary onClick={runExtract} busy={running}>
             ▶️ Extract vowels
           </Button>
 

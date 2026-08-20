@@ -2,10 +2,22 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { GlossaryTerm } from '../types'
 
+interface Reference {
+  work: string
+  why: string
+}
+
 export function GlossaryDrawer({ onClose }: { onClose: () => void }) {
   const [terms, setTerms] = useState<GlossaryTerm[]>([])
+  const [references, setReferences] = useState<Reference[]>([])
   useEffect(() => {
-    api.get('/api/glossary').then((r) => setTerms(r.terms)).catch(() => {})
+    api
+      .get('/api/glossary')
+      .then((r) => {
+        setTerms(r.terms)
+        setReferences(r.references ?? [])
+      })
+      .catch(() => {})
   }, [])
   return (
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label="Glossary">
@@ -23,6 +35,23 @@ export function GlossaryDrawer({ onClose }: { onClose: () => void }) {
               <div className="muted small">{t.definition}</div>
             </div>
           ))}
+          {references.length > 0 && (
+            <>
+              <div className="glossary-item">
+                <div className="glossary-term">Key readings</div>
+                <div className="muted small">
+                  The literature behind each feature — full citations in the repo's
+                  docs/REFERENCES.md.
+                </div>
+              </div>
+              {references.map((r) => (
+                <div key={r.work} className="glossary-item">
+                  <div className="glossary-ref">{r.work}</div>
+                  <div className="muted small">{r.why}</div>
+                </div>
+              ))}
+            </>
+          )}
         </div>
       </div>
     </div>

@@ -48,6 +48,8 @@ _WORDS: dict[str, list[str]] = {
     "ER": ["bird", "hurt", "word", "her", "learn"],
 }
 
+# make_speakers() generates only F/M, but make_vowel_tokens/make_vowel_tracks
+# accept custom speaker tables, so the scale map also covers "NB".
 _SEX_FORMANT_SCALE = {"F": 1.16, "M": 1.0, "NB": 1.08}
 _AGE_GROUPS = ("Older", "Middle", "Young")
 

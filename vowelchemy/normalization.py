@@ -39,12 +39,10 @@ See also NORM (Thomas & Kendall) and Barreda's note that ANAE == log-mean.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
-
 import numpy as np
 import pandas as pd
 
-from .constants import DEFAULT_NORMALIZATION
+from .constants import DEFAULT_NORMALIZATION, canonical_vowel
 from .schema import ColumnSchema
 
 # The Telsur grand log-mean Labov reported for 345 speakers ("Telsur G").
@@ -62,18 +60,6 @@ class NormalizationResult:
     units: str
     norm_columns: dict[str, str]  # logical field -> new column name
     notes: list[str] = field(default_factory=list)
-
-    @property
-    def f1(self) -> str:
-        return self.norm_columns["f1"]
-
-    @property
-    def f2(self) -> str:
-        return self.norm_columns["f2"]
-
-    @property
-    def f3(self) -> Optional[str]:
-        return self.norm_columns.get("f3")
 
 
 @dataclass
@@ -286,8 +272,6 @@ def _watt_fabricius(out, spk, formants, schema, *, notes, corner_high, corner_lo
                                       2009 modification)
     then F1' = F1 / S(F1), F2' = F2 / S(F2).
     """
-    from .constants import canonical_vowel  # local import to avoid cycle at top
-
     f1_col, f2_col = formants[0][1], formants[1][1]
     vowel_col = schema.require("vowel")
     canon = out[vowel_col].map(canonical_vowel)

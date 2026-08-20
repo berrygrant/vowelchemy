@@ -1,8 +1,8 @@
 """FastAPI backend for the Vowelchemy React app.
 
 This exposes the Vowelchemy *library* (corpus discovery, MFA/new-fave
-orchestration, normalization, analysis, metrics, phonJSD, visualization) over a
-small JSON API that the React front-end drives.  All the real work lives in the
+orchestration, normalization, analysis, metrics, phontrast, visualization) over
+a small JSON API that the React front-end drives.  All the real work lives in the
 library modules; this file is glue plus a light per-session state store.
 
 Charts are produced by :mod:`vowelchemy.visualization` (Plotly) on the server
@@ -36,11 +36,17 @@ from . import (
     extraction,
     metrics,
     normalization,
-    phonjsd,
+    phontrast,
     projects,
     sample_data,
     trajectories,
     visualization as viz,
+)
+from .constants import (
+    ARPABET_VOWELS,
+    DEFAULT_ACOUSTIC_MODEL,
+    DEFAULT_DICTIONARY,
+    canonical_vowel,
 )
 from .corpus import (
     discover_corpus,
@@ -50,7 +56,7 @@ from .corpus import (
     suggest_corpus_layout,
     validate_location,
 )
-from .glossary import GLOSSARY, jsd_verdict
+from .glossary import GLOSSARY, REFERENCES, jsd_verdict
 from .jobs import JobManager
 from .schema import ColumnSchema
 
@@ -201,8 +207,8 @@ class LoadCsvRequest(BaseModel):
 
 
 class AlignRequest(BaseModel):
-    acoustic_model: str = "english_us_arpa"
-    dictionary: str = "english_us_arpa"
+    acoustic_model: str = DEFAULT_ACOUSTIC_MODEL
+    dictionary: str = DEFAULT_DICTIONARY
     num_jobs: int = 3
     output_dir: Optional[str] = None
     download_models: bool = False
@@ -261,7 +267,7 @@ class SeparationRequest(BaseModel):
     vowels: list[str] = []
     group_by: Optional[str] = None
     dims: Optional[list[str]] = None
-    engine: str = "builtin"  # "builtin" | "phonjsd"
+    engine: str = "builtin"  # "builtin" | "phontrast"
     bootstrap: int = 0  # >0 → JSD confidence intervals
     permutations: int = 0  # >0 → Pillai permutation p-value
     dark: bool = False
@@ -296,12 +302,12 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
     mfa = alignment.mfa_status()
     nf = extraction.newfave_status()
-    pj = phonjsd.phonjsd_status()
+    pj = phontrast.phontrast_status()
     return {
         "tools": {
             "mfa": {"available": mfa.available, "version": mfa.version, "hint": mfa.install_hint},
             "newfave": {"available": nf.available, "version": nf.version, "hint": nf.install_hint},
-            "phonjsd": {"available": pj.available, "version": pj.version, "hint": pj.install_hint},
+            "phontrast": {"available": pj.available, "version": pj.version, "hint": pj.install_hint},
         },
         "data": {
             "loaded": s.vowel_df is not None,
@@ -408,7 +414,10 @@ def load_demo(x_vowelchemy_session: Optional[str] = Header(default=None)):
 @app.post("/api/voweldata/load")
 def load_voweldata(req: LoadCsvRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
-    res = extraction.load_existing_vowel_data(req.csv_path)
+    try:
+        res = extraction.load_existing_vowel_data(req.csv_path)
+    except (OSError, pd.errors.ParserError) as exc:
+        raise HTTPException(status_code=400, detail=f"Could not read vowel CSV: {exc}")
     _set_vowel_data(s, res.data, res.schema)
     return {"n_tokens": int(len(res.data)), "schema": s.schema.as_dict(), "notes": res.notes}
 
@@ -418,7 +427,7 @@ async def upload_voweldata(file: UploadFile = File(...),
                            x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
     raw = await file.read()
-    df = pd.read_csv(io.BytesIO(raw))
+    df = pd.read_csv(io.BytesIO(raw), sep=None, engine="python")  # sniff , vs tab
     _set_vowel_data(s, df)
     return {"n_tokens": int(len(df)), "schema": s.schema.as_dict()}
 
@@ -428,7 +437,7 @@ async def upload_demographics(file: UploadFile = File(...),
                               x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
     raw = await file.read()
-    s.demographics = pd.read_csv(io.BytesIO(raw))
+    s.demographics = pd.read_csv(io.BytesIO(raw), sep=None, engine="python")
     return {"n_speakers": int(len(s.demographics)),
             "columns": [str(c) for c in s.demographics.columns]}
 
@@ -551,7 +560,6 @@ def list_vowels(x_vowelchemy_session: Optional[str] = Header(default=None)):
     if df is None:
         raise HTTPException(status_code=400, detail="No data loaded.")
     vt = analysis.list_vowels(df, schema)
-    from .constants import ARPABET_VOWELS
     out = []
     for r in vt.itertuples():
         lexset, keyword = ARPABET_VOWELS.get(r.vowel, ("", ""))
@@ -568,7 +576,10 @@ def grouping_columns(x_vowelchemy_session: Optional[str] = Header(default=None))
         raise HTTPException(status_code=400, detail="No data loaded.")
     cols = analysis.candidate_grouping_columns(df, schema)
     values = {c: sorted(df[c].dropna().astype(str).unique().tolist())[:50] for c in cols}
-    return {"columns": cols, "values": values,
+    # Phonetic-context columns (detected via the schema) so the UI can rank
+    # sociodemographic factors above pre/fol segment when picking defaults.
+    context = [c for c in (schema.preseg, schema.folseg, schema.stress, schema.word) if c]
+    return {"columns": cols, "values": values, "context_columns": context,
             "norm_formants": [c for c in ("F1_norm", "F2_norm", "F3_norm") if c in df.columns]}
 
 
@@ -647,7 +658,7 @@ def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Hea
     sep = metrics.pairwise_separation(df, schema, vowels=req.vowels or None,
                                       group_by=req.group_by, dimensions=req.dims,
                                       bootstrap=req.bootstrap, permutations=req.permutations)
-    out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None, "phonjsd": None}
+    out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None, "phontrast": None}
     if not sep.empty:
         sep = sep.copy()
         sep["verdict"] = sep["JSD"].map(jsd_verdict)
@@ -663,18 +674,18 @@ def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Hea
             out["figure_matrix"] = fig_json(viz.separation_matrix(sep, group_value=lvl, dark=req.dark))
         out["full_csv"] = sep.to_csv(index=False)
 
-    if req.engine == "phonjsd":
-        pj = phonjsd.phonjsd_status()
+    if req.engine == "phontrast":
+        pj = phontrast.phontrast_status()
         if not pj.available:
-            out["phonjsd"] = {"error": "phonJSD/R not available. " + phonjsd.PHONJSD_INSTALL_HINT}
+            out["phontrast"] = {"error": "phontrast/R not available. " + phontrast.PHONTRAST_INSTALL_HINT}
         else:
             feats = req.dims or [c for c in ("F1_norm", "F2_norm") if c in df.columns]
             subset = analysis.select_vowels(df, schema, req.vowels) if req.vowels else df
             log: list[str] = []
-            res = phonjsd.compare_overlap_metrics(subset, features=feats,
+            res = phontrast.compare_overlap_metrics(subset, features=feats,
                                                   category_col="vowel_canon",
                                                   group_col=req.group_by, on_output=log.append)
-            out["phonjsd"] = {
+            out["phontrast"] = {
                 "ok": res.ok, "log": "\n".join(log), "notes": res.notes,
                 "table": df_payload(res.data, limit=1000) if res.data is not None else None,
             }
@@ -742,10 +753,8 @@ def post_recipe(req: RecipeRequest, x_vowelchemy_session: Optional[str] = Header
 @app.post("/api/vowelmap/upload")
 async def upload_vowelmap(file: UploadFile = File(...),
                           x_vowelchemy_session: Optional[str] = Header(default=None)):
-    from .constants import canonical_vowel
-
     s = session_for(x_vowelchemy_session)
-    m = pd.read_csv(io.BytesIO(await file.read()))
+    m = pd.read_csv(io.BytesIO(await file.read()), sep=None, engine="python")
     if m.shape[1] < 2:
         raise HTTPException(status_code=400, detail="Vowel map needs two columns: code,label.")
     code_col, label_col = m.columns[0], m.columns[1]
@@ -755,7 +764,7 @@ async def upload_vowelmap(file: UploadFile = File(...),
 
 @app.get("/api/glossary")
 def glossary():
-    return {"terms": GLOSSARY}
+    return {"terms": GLOSSARY, "references": REFERENCES}
 
 
 # --------------------------------------------------------------------------- #
@@ -826,7 +835,7 @@ def load_tracks_demo(x_vowelchemy_session: Optional[str] = Header(default=None))
 def load_tracks(req: TracksLoadRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
     try:
-        df = pd.read_csv(Path(req.csv_path).expanduser())
+        df = analysis.read_table(Path(req.csv_path).expanduser())
     except (OSError, pd.errors.ParserError) as exc:
         raise HTTPException(status_code=400, detail=f"Could not read tracks CSV: {exc}")
     schema = ColumnSchema.detect(df)
@@ -843,8 +852,6 @@ def load_tracks(req: TracksLoadRequest, x_vowelchemy_session: Optional[str] = He
 
 @app.get("/api/tracks/vowels")
 def tracks_vowels(x_vowelchemy_session: Optional[str] = Header(default=None)):
-    from .constants import ARPABET_VOWELS, canonical_vowel
-
     s = session_for(x_vowelchemy_session)
     if s.tracks_df is None or s.tracks_schema is None:
         return []
@@ -891,9 +898,11 @@ def health():
 # be registered LAST so it only catches paths the API routes did not handle.
 # --------------------------------------------------------------------------- #
 def _mount_frontend() -> None:
-    dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-    if dist.is_dir():
-        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+    from . import webui_dir
+
+    ui = webui_dir()
+    if ui is not None:
+        app.mount("/", StaticFiles(directory=str(ui), html=True), name="frontend")
 
 
 _mount_frontend()

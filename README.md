@@ -17,7 +17,7 @@ flowchart LR
     D --> E[Filter & group<br/>by vowel + demographics]
     E --> F[Download CSV]
     E --> G[Interactive plots<br/>distribution-first]
-    E --> H[Separation metrics<br/>phonJSD / built-in JSD]
+    E --> H[Separation metrics<br/>phontrast / built-in JSD]
 ```
 
 Each stage **detects whether its work is already done** — if your TextGrids are
@@ -37,9 +37,8 @@ charts. Install the backend, build the UI once, then launch:
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
-pip install -e .                                     # backend (pandas, scipy, plotly, fastapi)
-cd frontend && npm install && npm run build && cd ..  # build the UI (needs Node ≥ 18)
-vowelchemy app                                       # serves API + UI at http://127.0.0.1:8000
+pip install .            # backend (pandas, scipy, plotly, fastapi) + the prebuilt UI
+vowelchemy app           # serves API + UI at http://127.0.0.1:8000
 ```
 
 The backend pulls in only lightweight scientific-Python packages plus FastAPI.
@@ -47,10 +46,11 @@ You can explore the entire analysis, visualization, and separation-metrics
 workflow immediately using **Demo mode** (a button in the sidebar) — no corpus,
 aligner, or R required.
 
-> **No Node?** The built UI (`frontend/dist`) is committed, so `pip install .`
-> then `vowelchemy app` works without Node. To rebuild after changing the UI,
-> run `vowelchemy setup` (needs Node ≥ 18). Or use Docker — no local Python or
-> Node needed:
+> **No Node needed.** The built UI is committed inside the package
+> (`vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
+> `vowelchemy app` serves it from any directory. After changing frontend
+> source, rebuild with `vowelchemy setup` (needs Node ≥ 18). Or use Docker —
+> no local Python or Node needed:
 >
 > ```bash
 > docker build -t vowelchemy .
@@ -96,20 +96,20 @@ pip install new-fave        # provides the `fave-extract` command
 Launch Vowelchemy from an environment where `mfa` and/or `fave-extract` are on
 your `PATH`; the sidebar shows a 🟢 when each tool is detected.
 
-### 3. phonJSD (optional — canonical separation metrics)
+### 3. phontrast (optional — canonical separation metrics)
 
 Vowelchemy has a built-in Python implementation of JSD-based separation, so
 `6 · Separation` works out of the box. To use the **canonical** engine — the
-[phonJSD](https://github.com/berrygrant/phonJSD) R package — install R (≥ 4.1)
-and:
+[phontrast](https://github.com/berrygrant/phontrast) R package (formerly
+*phonJSD*; legacy installs still work) — install R (≥ 4.1) and:
 
 ```r
 install.packages("remotes")
-remotes::install_github("berrygrant/phonJSD")
+remotes::install_github("berrygrant/phontrast")
 ```
 
-Make sure `Rscript` is on your `PATH`. Vowelchemy will then offer phonJSD as an
-engine in the separation stage and call `compare_overlap_metrics()` directly.
+Make sure `Rscript` is on your `PATH`. Vowelchemy will then offer phontrast as
+an engine in the separation stage and call `compare_overlap_metrics()` directly.
 
 ---
 
@@ -140,7 +140,7 @@ Separation** to watch the LOT~THOUGHT JSD fall from ~0.96 (older) to ~0.10
 | **3 · Extract** | Measure vowel formants with new-fave's `fave-extract` (`corpus` / `subcorpora` mode) — again on a background job with a **live progress bar** — or load/upload an existing measurement CSV. Raw Hz formants are kept so you can re-normalize freely. |
 | **4 · Dataset** | Auto-detect the column schema (override if needed), join speaker demographics, pick a normalization method, select vowels, filter/group by any sociodemographic column, preview, and **download the tidy dataset as CSV**. |
 | **5 · Visualize** | Build interactive, **distribution-revealing** plots (see below). |
-| **6 · Separation** | Compute JSD / Pillai / Bhattacharyya separation between vowel categories, optionally within each level of a factor (e.g. Age Group). Uses phonJSD when available, the built-in engine otherwise. |
+| **6 · Separation** | Compute JSD / Pillai / Bhattacharyya separation between vowel categories, optionally within each level of a factor (e.g. Age Group). Uses the phontrast R package when available, the built-in engine otherwise. |
 
 ---
 
@@ -182,7 +182,7 @@ Colors come from a validated colorblind-safe categorical palette.
 
 ---
 
-## Separation metrics & phonJSD
+## Separation metrics & phontrast
 
 The **Jensen-Shannon Divergence (JSD)** between two vowels' distributions in
 (normalized) formant space measures how distinguishable they are:
@@ -196,8 +196,8 @@ a factor** (e.g. per Age Group) to reveal mergers in apparent time.
 
 Two engines:
 
-- **phonJSD (R)** — your lab's canonical package. When R + phonJSD are
-  installed, Vowelchemy calls
+- **phontrast (R)** — your lab's canonical package. When R + phontrast (or a
+  legacy phonJSD install) are present, Vowelchemy calls
   `compare_overlap_metrics(data, features, category_col, group_col)` and returns
   its full table (JSD, Pillai, Bhattacharyya, Mahalanobis, percent overlap, CIs).
 - **Built-in (Python)** — a methodologically aligned KDE-based implementation
@@ -279,26 +279,38 @@ vowelchemy/           # Python library + API (pip installable)
   jobs.py             # background jobs + progress parsing (align/extract)
   normalization.py    # Lobanov, Labov-ANAE, Nearey, Bark, Watt–Fabricius, …
   schema.py           # column auto-detection
-  analysis.py         # join / select / filter / group / summarize
-  metrics.py          # built-in JSD, Pillai, Bhattacharyya
-  phonjsd.py          # bridge to the phonJSD R package
+  analysis.py         # loaders, join / select / filter / group / outliers
+  metrics.py          # built-in JSD (+ bootstrap CIs), Pillai (+ permutation p), Bhattacharyya
+  trajectories.py     # formant-track (diphthong) trajectories
+  phontrast.py        # bridge to the phontrast R package (formerly phonJSD)
+  projects.py         # persistent named projects (~/.vowelchemy/projects)
+  glossary.py         # in-app glossary, key readings, metric verdicts
+  runners.py          # shared subprocess / tool-detection helpers
   visualization.py    # Plotly figures (distribution-first)
-  sample_data.py      # synthetic demo corpus
+  sample_data.py      # synthetic demo corpus (points + trajectory tracks)
   constants.py        # vowel identifiers (ARPABET ↔ lexical set ↔ keyword)
-frontend/             # React + Vite + TypeScript single-page app
+  webui/              # committed production build of the React UI (ships in the wheel)
+frontend/             # React + Vite + TypeScript single-page app (source)
   src/App.tsx         # shell + stage routing
   src/stages/*.tsx    # the six pipeline stages
   src/components/*    # sidebar, PlotlyChart, DataTable, form controls
+  src/hooks/*         # useJob (progress + reconnect), useBusy
   src/api.ts          # typed fetch client (session-aware)
+  src/lib.ts          # shared utils (downloads, CSV, grouping columns)
 examples/             # ready-to-use demo CSVs
+docs/REFERENCES.md    # the methods literature, with a feature → citation map
+docs/FEATURE_AUDIT.md # detailed feature inventory & test-coverage map
 docs/QOL_AUDIT.md     # usability audit (student + researcher) & roadmap
+docs/UNDERGRAD_RESEARCH_PLAN.md  # improvement plan for student researchers
+CITATION.cff          # how to cite Vowelchemy itself
 tests/                # pytest suite (library + API)
 ```
 
 > **Local-tool security note.** The folder picker lets the UI browse the
 > *server's* filesystem (the machine running `vowelchemy app`) — intended for
-> local single-user use. Don't expose the server to an untrusted network as-is;
-> a `--root` confinement flag is on the roadmap (see `docs/QOL_AUDIT.md`).
+> local single-user use. When the server isn't purely local, confine browsing
+> and autodetect to one directory tree with `VOWELCHEMY_BROWSE_ROOT=/data`
+> (the Docker image sets this to `/data` by default).
 
 ## Development
 
@@ -309,12 +321,12 @@ pytest                        # library + API tests
 cd frontend
 npm install
 npm run dev                   # hot-reloading UI at http://localhost:5173
-npm run build                 # production build served by `vowelchemy app`
+npm run build                 # production build → vowelchemy/webui (commit it)
 ```
 
 The Python tests cover the schema, normalization math (Lobanov, Labov-ANAE,
 Nearey, Bark, Watt–Fabricius), analysis, the built-in separation metrics, corpus
-discovery, the phonJSD bridge, the extraction command builder, and every FastAPI
+discovery, the phontrast bridge, the extraction command builder, and every FastAPI
 endpoint (`fastapi.testclient`). The React app type-checks with `tsc` on each
 build.
 
@@ -324,10 +336,18 @@ build.
 > fails, check the streamed log against `mfa align --help` / `fave-extract
 > --help` for your installed versions.
 
+## References & citing
+
+The methods implemented here come from the sociophonetics and information-theory
+literature — **`docs/REFERENCES.md`** has the full reference list plus a
+feature → citation map for write-ups, and the in-app **Glossary** lists the key
+readings. To cite Vowelchemy itself, use **`CITATION.cff`** (GitHub's "Cite this
+repository" button).
+
 ## Credits
 
-- **Montreal Forced Aligner** — McAuliffe et al.
-- **new-fave** — Josef Fruehwald.
-- **phonJSD** — Grant M. Berry.
+- **Montreal Forced Aligner** — McAuliffe, Socolof, Mihuc, Wagner & Sonderegger (2017).
+- **new-fave** — Josef Fruehwald; **FAVE** — Rosenfelder et al.
+- **phontrast** (formerly phonJSD) — Grant M. Berry.
 
 Vowelchemy is released under the MIT License (see `LICENSE`).

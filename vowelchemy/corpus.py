@@ -27,7 +27,6 @@ from .constants import (
     PHONE_TIER_NAMES,
     TEXTGRID_EXTENSIONS,
     TRANSCRIPT_TEXT_EXTENSIONS,
-    WORD_TIER_NAMES,
 )
 
 _TIER_NAME_RE = re.compile(r'name\s*=\s*"((?:[^"\\]|\\.)*)"')
@@ -76,11 +75,6 @@ def is_aligned_textgrid(path: Path) -> bool:
     """True if the TextGrid contains a phone-level tier (i.e. force-aligned)."""
     tiers = {t.lower() for t in sniff_textgrid_tiers(path)}
     return bool(tiers & PHONE_TIER_NAMES)
-
-
-def textgrid_has_word_tier(path: Path) -> bool:
-    tiers = {t.lower() for t in sniff_textgrid_tiers(path)}
-    return bool(tiers & WORD_TIER_NAMES)
 
 
 # --------------------------------------------------------------------------- #
@@ -311,14 +305,18 @@ def discover_corpus(
     )
 
 
+# Filename fragments that mark a CSV as likely formant/vowel extraction output
+# (new-fave's primary output is ``*_points.csv``). Shared by find_vowel_data
+# and suggest_corpus_layout so the two detectors never drift apart.
+VOWEL_CSV_HINTS = ("vowel", "formant", "fave", "tracks", "points", "measurement", "_norm")
+
+
 def find_vowel_data(*search_dirs: str | os.PathLike) -> list[Path]:
     """Return candidate extracted-vowel CSV files under the given directories.
 
-    We look for ``.csv`` files whose names hint at formant/vowel extraction
-    output (``*vowel*``, ``*formant*``, ``*fave*``, ``*_norm*``) so the app can
-    offer to skip straight to analysis when data already exists.
+    We look for ``.csv`` files whose names match :data:`VOWEL_CSV_HINTS` so the
+    app can offer to skip straight to analysis when data already exists.
     """
-    hints = ("vowel", "formant", "fave", "_norm", "tracks", "measurement")
     found: list[Path] = []
     seen: set[Path] = set()
     for d in search_dirs:
@@ -329,7 +327,7 @@ def find_vowel_data(*search_dirs: str | os.PathLike) -> list[Path]:
             continue
         for path in _iter_files(root, {".csv"}):
             name = path.name.lower()
-            if any(h in name for h in hints) and path not in seen:
+            if any(h in name for h in VOWEL_CSV_HINTS) and path not in seen:
                 seen.add(path)
                 found.append(path)
     return sorted(found)
@@ -338,7 +336,6 @@ def find_vowel_data(*search_dirs: str | os.PathLike) -> list[Path]:
 # --------------------------------------------------------------------------- #
 # Layout auto-detection (fuzzy: find the sub-folders that hold each field)
 # --------------------------------------------------------------------------- #
-_VOWEL_CSV_HINTS = ("vowel", "formant", "fave", "tracks", "points", "measurement", "_norm")
 _SPEAKER_CSV_RE = re.compile(r"speaker|demograph|meta|subject|participant|social|info", re.I)
 
 
@@ -428,7 +425,7 @@ def suggest_corpus_layout(
     transcript_dir = _common_ancestor(transcripts, root) or audio_dir
     aligned_dir = _common_ancestor(aligned, root)
 
-    vowel_csvs = [p for p in csvs if any(h in p.name.lower() for h in _VOWEL_CSV_HINTS)]
+    vowel_csvs = [p for p in csvs if any(h in p.name.lower() for h in VOWEL_CSV_HINTS)]
     speaker_csvs = [
         p for p in csvs if _SPEAKER_CSV_RE.search(p.name) and p not in vowel_csvs
     ]

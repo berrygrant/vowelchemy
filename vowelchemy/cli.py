@@ -6,6 +6,9 @@ the web app is one command away::
     vowelchemy app                       # launch the API + React app
     vowelchemy demo ./demo               # write a synthetic corpus dataset
     vowelchemy discover ./audio --transcripts ./texts
+    vowelchemy validate ./audio --transcripts ./texts   # mfa validate
+    vowelchemy align ./audio --transcripts ./texts -o ./aligned
+    vowelchemy extract ./audio --aligned ./aligned -o ./vowels
     vowelchemy normalize vowels.csv -m lobanov -s speakers.csv -o out.csv
     vowelchemy separation vowels.csv --vowels IY,EH,AA,AO --group-by "Age Group"
 """
@@ -16,19 +19,22 @@ import argparse
 import sys
 from pathlib import Path
 
+from .constants import DEFAULT_ACOUSTIC_MODEL, DEFAULT_DICTIONARY
+
 
 def _cmd_app(args: argparse.Namespace) -> int:
     import importlib.util
     import subprocess
 
+    from . import webui_dir
+
     if importlib.util.find_spec("uvicorn") is None:
         print("uvicorn is not installed. Install with: pip install -e .", file=sys.stderr)
         return 1
     port = args.port or 8000
-    dist = Path(__file__).resolve().parent.parent / "frontend" / "dist"
-    if not dist.is_dir():
+    if webui_dir() is None:
         print("Note: the React front-end has not been built yet. Serving the API only.\n"
-              "      Build it with:  cd frontend && npm install && npm run build\n"
+              "      Build it with:  vowelchemy setup\n"
               "      or run the dev server:  cd frontend && npm run dev\n", file=sys.stderr)
     print(f"Vowelchemy running at http://127.0.0.1:{port}  (API under /api)")
     cmd = [sys.executable, "-m", "uvicorn", "vowelchemy.api:app",
@@ -120,12 +126,15 @@ def _cmd_setup(args: argparse.Namespace) -> int:
     import shutil
     import subprocess
 
+    from . import webui_dir
+
     frontend = Path(__file__).resolve().parent.parent / "frontend"
     if not frontend.is_dir():
-        print("frontend/ directory not found next to the package.", file=sys.stderr)
+        print("frontend/ directory not found next to the package "
+              "(a source checkout is required to rebuild the UI).", file=sys.stderr)
         return 1
-    if (frontend / "dist").is_dir() and not args.force:
-        print("UI already built (frontend/dist). Use --force to rebuild.")
+    if webui_dir() is not None and not args.force:
+        print(f"UI already built ({webui_dir()}). Use --force to rebuild.")
         return 0
     npm = shutil.which("npm")
     if not npm:
@@ -158,6 +167,28 @@ def _cmd_align(args: argparse.Namespace) -> int:
         num_jobs=args.jobs, on_output=print,
     )
     print(f"{'OK' if res.ok else 'FAILED'}: {len(res.textgrids)} TextGrids in {res.output_dir}")
+    return 0 if res.ok else 1
+
+
+def _cmd_validate(args: argparse.Namespace) -> int:
+    """Stage the corpus and run MFA's own validator against it."""
+    import tempfile
+
+    from . import alignment
+    from .corpus import discover_corpus
+
+    if not alignment.mfa_status().available:
+        print("MFA not found.\n" + alignment.MFA_INSTALL_HINT, file=sys.stderr)
+        return 1
+    inv = discover_corpus(args.audio_dir, transcript_dir=args.transcripts)
+    staging = tempfile.mkdtemp(prefix="vowelchemy_validate_")
+    staged = alignment.stage_corpus(inv, staging)
+    print(f"Staged {staged.n_staged} recording(s); running mfa validate…")
+    res = alignment.validate_corpus(
+        staged.corpus_dir, dictionary=args.dictionary, acoustic_model=args.acoustic,
+        num_jobs=args.jobs, on_output=print,
+    )
+    print("OK" if res.ok else "Validation reported problems (see output above).")
     return 0 if res.ok else 1
 
 
@@ -209,11 +240,19 @@ def build_parser() -> argparse.ArgumentParser:
     al.add_argument("--transcripts", default=None)
     al.add_argument("--aligned", default=None)
     al.add_argument("-o", "--output", default=None)
-    al.add_argument("--acoustic", default="english_us_arpa")
-    al.add_argument("--dictionary", default="english_us_arpa")
+    al.add_argument("--acoustic", default=DEFAULT_ACOUSTIC_MODEL)
+    al.add_argument("--dictionary", default=DEFAULT_DICTIONARY)
     al.add_argument("-j", "--jobs", type=int, default=3)
     al.add_argument("--download-models", action="store_true", dest="download_models")
     al.set_defaults(func=_cmd_align)
+
+    v = sub.add_parser("validate", help="run `mfa validate` on a corpus before aligning")
+    v.add_argument("audio_dir")
+    v.add_argument("--transcripts", default=None)
+    v.add_argument("--acoustic", default=DEFAULT_ACOUSTIC_MODEL)
+    v.add_argument("--dictionary", default=DEFAULT_DICTIONARY)
+    v.add_argument("-j", "--jobs", type=int, default=3)
+    v.set_defaults(func=_cmd_validate)
 
     ex = sub.add_parser("extract", help="extract vowels with new-fave")
     ex.add_argument("audio_dir")

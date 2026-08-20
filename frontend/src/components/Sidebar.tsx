@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../api'
-import type { Ctx, Stage, Status, ToolInfo } from '../types'
+import type { Ctx, Stage, ToolInfo } from '../types'
+import { useBusy } from '../hooks/useBusy'
 import { SessionPanel } from './SessionPanel'
 import { GlossaryDrawer } from './GlossaryDrawer'
 
@@ -24,32 +25,17 @@ function ToolRow({ name, info, absentNote }: { name: string; info?: ToolInfo; ab
   )
 }
 
-export function Sidebar({
-  stage,
-  setStage,
-  status,
-  refresh,
-  ctx,
-}: {
-  stage: Stage
-  setStage: (s: Stage) => void
-  status: Status | null
-  refresh: () => Promise<void>
-  ctx: Ctx
-}) {
-  const [busy, setBusy] = useState(false)
+export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
+  const { busy, run } = useBusy()
   const [showGlossary, setShowGlossary] = useState(false)
+  const status = ctx.status
 
-  const loadDemo = async () => {
-    setBusy(true)
-    try {
+  const loadDemo = () =>
+    run(async () => {
       await api.post('/api/demo')
-      await refresh()
-      setStage('dataset')
-    } finally {
-      setBusy(false)
-    }
-  }
+      await ctx.refresh()
+      ctx.go('dataset')
+    })
 
   const data = status?.data
 
@@ -66,7 +52,7 @@ export function Sidebar({
           <button
             key={s.id}
             className={`nav-item ${stage === s.id ? 'nav-active' : ''}`}
-            onClick={() => setStage(s.id)}
+            onClick={() => ctx.go(s.id)}
           >
             <span className="nav-num">{s.n}</span>
             {s.label}
@@ -78,7 +64,7 @@ export function Sidebar({
         <div className="side-heading">Tools</div>
         <ToolRow name="MFA" info={status?.tools.mfa} />
         <ToolRow name="new-fave" info={status?.tools.newfave} />
-        <ToolRow name="phonJSD" info={status?.tools.phonjsd} absentNote="built-in JSD" />
+        <ToolRow name="phontrast" info={status?.tools.phontrast} absentNote="built-in JSD" />
       </div>
 
       <div className="side-section">
