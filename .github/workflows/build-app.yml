@@ -10,6 +10,12 @@ on:
   push:
     tags: ["v*"]
 
+# Needed by the "Attach to release" step: without it the default GITHUB_TOKEN
+# is read-only and creating the release fails with
+# "403 Resource not accessible by integration" *after* the apps have built.
+permissions:
+  contents: write
+
 jobs:
   build:
     name: ${{ matrix.label }}
