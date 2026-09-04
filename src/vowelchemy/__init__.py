@@ -26,7 +26,8 @@ def webui_dir() -> Optional[Path]:
     packaged = Path(__file__).resolve().parent / "webui"
     if (packaged / "index.html").is_file():
         return packaged
-    legacy = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+    # src-layout checkout: repo root is two levels up from the package.
+    legacy = Path(__file__).resolve().parents[2] / "frontend" / "dist"
     if (legacy / "index.html").is_file():
         return legacy
     return None

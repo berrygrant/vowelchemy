@@ -4,6 +4,7 @@ import type { Ctx, Stage, ToolInfo } from '../types'
 import { useBusy } from '../hooks/useBusy'
 import { SessionPanel } from './SessionPanel'
 import { GlossaryDrawer } from './GlossaryDrawer'
+import { ToolsPanel } from './ToolsPanel'
 
 const STAGES: { id: Stage; n: number; label: string }[] = [
   { id: 'corpus', n: 1, label: 'Corpus' },
@@ -28,6 +29,7 @@ function ToolRow({ name, info, absentNote }: { name: string; info?: ToolInfo; ab
 export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
   const { busy, run } = useBusy()
   const [showGlossary, setShowGlossary] = useState(false)
+  const [showTools, setShowTools] = useState(false)
   const status = ctx.status
 
   const loadDemo = () =>
@@ -42,7 +44,7 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
   return (
     <aside className="sidebar">
       <div className="brand">
-        <span className="brand-mark">🧪</span>
+        <img className="brand-mark" src="/icon.svg" alt="" width={28} height={28} />
         <span>Vowelchemy</span>
       </div>
       <p className="brand-sub">corpus → alignment → vowels → analysis</p>
@@ -65,6 +67,14 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
         <ToolRow name="MFA" info={status?.tools.mfa} />
         <ToolRow name="new-fave" info={status?.tools.newfave} />
         <ToolRow name="phontrast" info={status?.tools.phontrast} absentNote="built-in JSD" />
+        <button className="btn btn-small side-tools" onClick={() => setShowTools(true)}>
+          🔧 Set up tools
+        </button>
+        {status?.tool_env && (
+          <div className="muted small mono tool-env-line" title={status.tool_env}>
+            env: {status.tool_env.split('/').pop()}
+          </div>
+        )}
       </div>
 
       <div className="side-section">
@@ -94,6 +104,7 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
         ❔ Glossary &amp; help
       </button>
       {showGlossary && <GlossaryDrawer onClose={() => setShowGlossary(false)} />}
+      {showTools && <ToolsPanel ctx={ctx} onClose={() => setShowTools(false)} />}
     </aside>
   )
 }

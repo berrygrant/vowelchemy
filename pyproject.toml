@@ -29,6 +29,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.1", "httpx>=0.27"]
+# Formant extraction. new-fave is a normal pip package (Python 3.10+), so it can
+# ride along: `pip install "vowelchemy[extract]"`. MFA deliberately cannot —
+# its Kaldi bindings are published on conda-forge only, so pip installs a broken
+# aligner. Install MFA with conda/mamba and point the app at that environment.
+extract = ["new-fave>=1.0"]
 
 [project.scripts]
 vowelchemy = "vowelchemy.cli:main"
@@ -37,6 +42,9 @@ vowelchemy = "vowelchemy.cli:main"
 Homepage = "https://github.com/berrygrant/vowelchemy"
 
 [tool.setuptools]
+# src layout: the repo root has no folder named like the package, so students
+# can't end up one `cd vowelchemy` too deep. Import name is unchanged.
+package-dir = { "" = "src" }
 packages = ["vowelchemy"]
 
 [tool.setuptools.package-data]

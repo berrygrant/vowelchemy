@@ -16,7 +16,7 @@ jobs:
       - name: Install (backend + dev)
         run: pip install -e ".[dev]"
       - name: Lint
-        run: ruff check vowelchemy tests
+        run: ruff check src tests
       - name: Test
         run: pytest -q
       # Optional integration smoke against MFA / new-fave / phonJSD; skips

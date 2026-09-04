@@ -116,7 +116,10 @@ h3.card-title {
   font-weight: 700;
 }
 .brand-mark {
-  font-size: 1.4rem;
+  width: 28px;
+  height: 28px;
+  display: block;
+  flex-shrink: 0;
 }
 .brand-sub {
   color: var(--muted);
@@ -680,6 +683,69 @@ input[type='file'] {
   width: 100%;
   justify-content: center;
   margin-top: 10px;
+}
+
+/* Tool setup panel */
+.side-tools {
+  width: 100%;
+  justify-content: center;
+  margin-top: 8px;
+}
+.tool-env-line {
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-status {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.tool-selected {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+.env-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 6px;
+}
+.env-row:hover {
+  border-color: var(--primary);
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.76rem;
+  word-break: break-all;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.app-info {
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+.tools-section {
+  margin: 20px 0 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
 }
 
 /* Chart export toolbar */

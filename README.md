@@ -86,7 +86,7 @@ workflow immediately using **Demo mode** (a button in the sidebar) — no corpus
 aligner, or R required.
 
 > **No Node needed.** The built UI is committed inside the package
-> (`vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
+> (`src/vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
 > `vowelchemy app` serves it from any directory. After changing frontend
 > source, rebuild with `vowelchemy setup` (needs Node ≥ 18).
 >
@@ -100,7 +100,9 @@ aligner, or R required.
 >
 > (`docker build` looks for `Dockerfile` in the directory you pass — `.` —
 > so "no such file or directory" means you're not in the repo root; either
-> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.)
+> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.
+> If `ls` shows `api.py` and `cli.py`, you're inside the package folder
+> (`src/vowelchemy/`) — go up to the repo root.)
 >
 > This needs Docker installed *and its daemon running* (on macOS/Windows
 > that means Docker Desktop is open), plus network access to Docker Hub for
@@ -126,25 +128,59 @@ parameters and **custom (IPA/non-English) vowel-label maps**; an in-app
 
 Force-alignment and formant extraction are heavy, specialized tools that live
 in their own environments. Vowelchemy *orchestrates* them — it does not bundle
-them.
+them. **Stages 1 and 4–6 don't need either tool**, so a student handed an
+extracted vowel CSV can skip this section entirely.
 
-**Montreal Forced Aligner** (for `2 · Align`):
+The app can set both up for you: click **🔧 Set up tools** in the sidebar. It
+finds conda/mamba environments that already contain the tools, lets you pick
+one (Vowelchemy then runs them straight from there — *no activation needed*),
+and installs new-fave on request.
+
+**Montreal Forced Aligner** (for `2 · Align`) — **conda/mamba only**:
 
 ```bash
-conda create -n aligner -c conda-forge montreal-forced-aligner
-conda activate aligner
+mamba create -n aligner -c conda-forge montreal-forced-aligner   # or: conda create …
+mamba activate aligner
 mfa model download acoustic english_us_arpa
 mfa model download dictionary english_us_arpa
 ```
 
-**new-fave** (for `3 · Extract`):
+> `pip install montreal-forced-aligner` **appears to work and then fails** at
+> run time with `No module named '_kalpy'` — MFA's Kaldi bindings are published
+> on conda-forge, not PyPI. That's why the aligner can't ride along in the
+> app's own environment, and why "Set up tools" borrows it instead.
+
+**new-fave** (for `3 · Extract`) — a normal pip package (Python ≥ 3.10):
 
 ```bash
-pip install new-fave        # provides the `fave-extract` command
+pip install new-fave                  # provides the `fave-extract` command
+pip install "vowelchemy[extract]"     # or install it alongside Vowelchemy
 ```
 
-Launch Vowelchemy from an environment where `mfa` and/or `fave-extract` are on
-your `PATH`; the sidebar shows a 🟢 when each tool is detected.
+The sidebar shows 🟢 when each tool is detected — in the environment you
+picked, in Vowelchemy's own environment, or on your `PATH`. To point at an
+environment without opening the app (lab machines, containers), set
+`VOWELCHEMY_TOOL_ENV=/path/to/env` or run `vowelchemy doctor --use-env <path>`.
+
+**Stuck?** `vowelchemy doctor` prints which Vowelchemy is running, from where,
+which tools it can see, and every environment it found:
+
+```
+$ vowelchemy doctor
+Vowelchemy
+  version   : 0.1.0
+  code      : /Users/you/vowelchemy/src/vowelchemy
+  python    : 3.11.15 (/Users/you/vowelchemy/.venv-app/bin/python3)
+  UI bundle : /Users/you/vowelchemy/src/vowelchemy/webui
+
+Tool environment: /Users/you/miniforge3/envs/aligner
+  OK MFA           : 3.4.2 [/Users/you/miniforge3/envs/aligner/bin/mfa]
+  -- new-fave      : not found
+```
+
+(That first block is also the answer when a fix you pulled doesn't seem to be
+there — if `code:` points somewhere unexpected, you're running an older
+installed copy; re-install from your checkout.)
 
 ### 3. phontrast (optional — canonical separation metrics)
 
@@ -264,6 +300,8 @@ Two engines:
 
 ```bash
 vowelchemy app                                    # launch the app
+vowelchemy doctor                                  # what's installed, where, which tools
+vowelchemy doctor --use-env ~/miniforge3/envs/aligner   # borrow MFA from a conda env
 vowelchemy setup                                   # build the UI (needs Node)
 vowelchemy demo ./demo                             # write a synthetic dataset
 vowelchemy discover ./audio --transcripts ./texts  # scan a corpus
@@ -327,8 +365,10 @@ React renders them with plotly.js and never re-implements chart logic.
 ```
 Start Vowelchemy (Mac).command    # double-click launcher (self-installing)
 Start Vowelchemy (Windows).bat    # double-click launcher (self-installing)
-packaging/desktop/    # PyInstaller desktop app (entry + spec; built by CI)
-vowelchemy/           # Python library + API (pip installable)
+assets/icon.svg       # app artwork (build_icons.py regenerates every format)
+packaging/desktop/    # PyInstaller desktop app (entry, spec, icons; built by CI)
+src/vowelchemy/       # Python library + API (pip installable; src layout, so
+                      # the repo root has no folder with the package's name)
   api.py              # FastAPI backend — exposes the library over JSON
   cli.py              # command-line entry point (`vowelchemy …`)
   corpus.py           # discovery, pairing, alignment detection, autodetect + browse
@@ -344,6 +384,7 @@ vowelchemy/           # Python library + API (pip installable)
   projects.py         # persistent named projects (~/.vowelchemy/projects)
   glossary.py         # in-app glossary, key readings, metric verdicts
   runners.py          # shared subprocess / tool-detection helpers
+  toolenv.py          # find MFA/new-fave in conda envs; remember the choice
   visualization.py    # Plotly figures (distribution-first)
   sample_data.py      # synthetic demo corpus (points + trajectory tracks)
   constants.py        # vowel identifiers (ARPABET ↔ lexical set ↔ keyword)
@@ -381,7 +422,7 @@ pytest                        # library + API tests
 cd frontend
 npm install
 npm run dev                   # hot-reloading UI at http://localhost:5173
-npm run build                 # production build → vowelchemy/webui (commit it)
+npm run build                 # production build → src/vowelchemy/webui (commit it)
 ```
 
 The Python tests cover the schema, normalization math (Lobanov, Labov-ANAE,

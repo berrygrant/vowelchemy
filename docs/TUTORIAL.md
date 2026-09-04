@@ -252,41 +252,47 @@ Vowelchemy groups by whatever columns the demographics file has.
 *(Skip this whole section if your supervisor gave you a pre-extracted vowel
 CSV — you'd jump straight from B.1 to loading it in B.6, and the
 double-click launch from A.1 is all you need. B.3 is only for aligning and
-extracting from raw audio yourself, and it's the one part that genuinely
-needs the terminal: the double-click launchers can't see tools inside a
-conda environment.)*
+extracting from raw audio yourself.)*
 
-Part B needs two external tools, and the easiest reliable setup is to put
-*everything* — MFA, new-fave, and Vowelchemy — in one conda environment.
-(conda is a program that manages tool installations; if you don't have it,
-install Miniconda from docs.conda.io first.)
+Part B needs two outside programs, and the app can wire up both. Click
+**🔧 Set up tools** in the sidebar; the panel shows whether each one is found
+and how to get it.
 
-```bash
-# 1. Create an environment with the Montreal Forced Aligner in it
-conda create -n aligner -c conda-forge montreal-forced-aligner
-conda activate aligner
-mfa model download acoustic english_us_arpa
-mfa model download dictionary english_us_arpa
+**new-fave** (stage 3, formant measurement) is an ordinary Python package, so
+the panel's **Install new-fave** button does it for you — no terminal.
 
-# 2. In that SAME environment, install new-fave and Vowelchemy
-#    (the activated conda environment plays the virtual-environment role
-#     here, so plain pip is safe — no separate venv needed)
-pip install new-fave
-cd vowelchemy        # the folder you cloned in A.1
-pip install .
+**MFA** (stage 2, forced alignment) has to come from conda or mamba: it uses
+the Kaldi speech engine, which isn't distributed through Python's installer,
+so `pip install montreal-forced-aligner` produces an aligner that crashes the
+moment you use it. Two ways to get a working one:
 
-# 3. Test, then launch
-mfa version
-fave-extract --version
-vowelchemy app
-```
+- **The lab machine probably already has it.** In **Set up tools**, look
+  under *Use an environment you already have* — Vowelchemy scans for
+  conda/mamba environments containing MFA. Click **Use this** on the one your
+  lab set up (often called `aligner`) and the sidebar's MFA dot turns green.
+  Vowelchemy runs the aligner straight from there; you never activate
+  anything.
+- **Installing it yourself** takes one terminal command (the panel has a copy
+  button for it). With [Miniforge](https://conda-forge.org/download/)
+  installed:
 
-If both test commands print a version number, the sidebar's **MFA** and
-**new-fave** dots will be green when the app loads. If a dot is grey, you
-almost certainly launched `vowelchemy app` from outside the `aligner`
-environment — run `conda activate aligner` and relaunch.
-**`[LAB — confirm]:** the MFA version installed on the lab machines, and
-whether `english_us_arpa` remains the lab-standard model + dictionary pair.*
+  ```bash
+  mamba create -n aligner -c conda-forge montreal-forced-aligner
+  ```
+
+  Then reopen **Set up tools**, click **Scan again**, and pick the new
+  `aligner` environment. Stage 2 can download the English models for you, or
+  run `mfa model download acoustic english_us_arpa` and
+  `mfa model download dictionary english_us_arpa` yourself.
+
+If a dot that should be green isn't — or a fix someone told you about seems
+missing — run `vowelchemy doctor` in a terminal, or read the last line of the
+Set up tools panel. It reports which copy of Vowelchemy is running, from
+which folder, and every tool environment it can see.
+
+**`[LAB — confirm]:** the name and location of the lab's MFA environment, the
+MFA version installed, and whether `english_us_arpa` remains the lab-standard
+model + dictionary pair.*
 
 ### B.4 Stage 1 · Corpus — point at the data, and dodge the trap
 

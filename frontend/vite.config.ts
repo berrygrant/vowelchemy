@@ -15,7 +15,7 @@ export default defineConfig({
   build: {
     // Build INTO the Python package so the UI ships inside the wheel and
     // `pip install vowelchemy && vowelchemy app` serves it from anywhere.
-    outDir: '../vowelchemy/webui',
+    outDir: '../src/vowelchemy/webui',
     emptyOutDir: true,
     chunkSizeWarningLimit: 4000,
   },

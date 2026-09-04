@@ -5,7 +5,7 @@ WORKDIR /app/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
-# vite builds into ../vowelchemy/webui (i.e. /app/vowelchemy/webui here).
+# vite builds into ../src/vowelchemy/webui (i.e. /app/src/vowelchemy/webui here).
 RUN npm run build
 
 FROM python:3.11-slim
@@ -14,8 +14,8 @@ WORKDIR /app
 # when needed — see the README). The freshly built UI is copied into the
 # package before install so it ships inside site-packages.
 COPY pyproject.toml README.md ./
-COPY vowelchemy/ ./vowelchemy/
-COPY --from=ui /app/vowelchemy/webui ./vowelchemy/webui
+COPY src/ ./src/
+COPY --from=ui /app/src/vowelchemy/webui ./src/vowelchemy/webui
 RUN pip install --no-cache-dir .
 
 EXPOSE 8000
