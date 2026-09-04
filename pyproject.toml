@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "vowelchemy"
-version = "0.1.0"
+version = "0.2"
 description = "A lab-friendly pipeline for turning conversational speech corpora into normalized, analyzable vowel data."
 readme = "README.md"
 requires-python = ">=3.9"
