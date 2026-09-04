@@ -154,6 +154,52 @@ def test_tracks_load_and_vowels(client, tmp_path):
     assert bad.status_code == 400
 
 
+def test_tools_overview_and_environment_selection(client, tmp_path, monkeypatch):
+    import stat
+
+    monkeypatch.setenv("VOWELCHEMY_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("VOWELCHEMY_TOOL_ENV", raising=False)
+
+    overview = client.get("/api/tools").json()
+    assert overview["selected"] is None
+    # MFA is never offered as a pip install; new-fave may be, depending on Python.
+    assert overview["install"]["mfa"]["possible"] is False
+    assert "conda" in overview["install"]["mfa"]["reason"].lower()
+    assert overview["app"]["version"]
+
+    # a folder with neither tool is refused with a helpful message
+    bad = client.post("/api/tools/environment", json={"path": str(tmp_path)})
+    assert bad.status_code == 400 and "doesn't contain" in bad.json()["detail"]
+
+    env = tmp_path / "aligner"
+    (env / "bin").mkdir(parents=True)
+    exe = env / "bin" / "mfa"
+    exe.write_text("#!/bin/sh\necho 'mfa 3.4.2'\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+
+    chosen = client.post("/api/tools/environment", json={"path": str(env)}).json()
+    assert chosen["selected"] == str(env)
+    assert chosen["tools"]["mfa"]["available"] is True
+    # the choice shows up in the status the sidebar polls
+    assert client.get("/api/status").json()["tool_env"] == str(env)
+
+    cleared = client.post("/api/tools/environment", json={"path": None}).json()
+    assert cleared["selected"] is None
+
+
+def test_tools_environments_listing(client, tmp_path, monkeypatch):
+    monkeypatch.setenv("VOWELCHEMY_HOME", str(tmp_path / "state"))
+    body = client.get("/api/tools/environments").json()
+    assert isinstance(body["environments"], list)
+    assert "tools" in body and "install" in body
+
+
+def test_install_endpoint_refuses_mfa(client):
+    res = client.post("/api/tools/install", json={"tool": "mfa"})
+    assert res.status_code == 400
+    assert "pip" in res.json()["detail"].lower()
+
+
 def test_glossary_includes_references(client):
     body = client.get("/api/glossary").json()
     assert len(body["terms"]) > 5

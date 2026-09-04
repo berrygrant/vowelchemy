@@ -35,9 +35,11 @@ from .runners import CommandResult, ToolStatus, probe_version, run_streaming, wh
 from .schema import ColumnSchema
 
 NEWFAVE_INSTALL_HINT = (
-    "Install new-fave into a Python 3.10+ environment:\n"
+    "new-fave installs with pip into any Python 3.10+ environment:\n"
     "  pip install new-fave\n"
-    "This provides the `fave-extract` command used for measurement."
+    "It provides the `fave-extract` command used for measurement. The app can\n"
+    "do this for you — 'Set up tools' ▸ Install new-fave — or you can point it\n"
+    "at an environment that already has it."
 )
 
 
