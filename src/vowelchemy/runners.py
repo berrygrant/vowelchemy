@@ -9,10 +9,11 @@ and extraction wrappers share identical process-handling and error semantics.
 from __future__ import annotations
 
 import os
-import shutil
 import subprocess
 from dataclasses import dataclass
 from typing import Callable, Optional, Sequence
+
+from . import toolenv
 
 
 @dataclass
@@ -43,7 +44,12 @@ class ToolStatus:
 
 
 def which(executable: str) -> Optional[str]:
-    return shutil.which(executable)
+    """Locate a tool, including in a borrowed conda env and our own venv.
+
+    See :mod:`vowelchemy.toolenv`: plain ``PATH`` misses both the environment
+    the user pointed us at and the launcher's own (un-activated) venv.
+    """
+    return toolenv.resolve(executable)
 
 
 def run_streaming(
@@ -60,7 +66,13 @@ def run_streaming(
     executable as a ``FileNotFoundError``-derived returncode of 127.
     """
     args = [str(a) for a in args]
-    full_env = {**os.environ, **(env or {})}
+    # Resolve a bare command name through the borrowed environment, and put its
+    # directories on PATH so the tool's own helpers/DLLs resolve too.
+    if args and os.sep not in args[0] and (os.altsep or os.sep) not in args[0]:
+        resolved = toolenv.resolve(args[0])
+        if resolved:
+            args[0] = resolved
+    full_env = {**toolenv.subprocess_env(), **(env or {})}
     lines: list[str] = []
     try:
         proc = subprocess.Popen(
@@ -107,8 +119,9 @@ def probe_version(executable: str, version_args: Sequence[str] = ("version",)) -
     for candidate in candidates:
         try:
             res = subprocess.run(
-                [executable, *candidate],
+                [path, *candidate],
                 capture_output=True, text=True, timeout=30,
+                env=toolenv.subprocess_env(),
             )
         except (subprocess.SubprocessError, OSError):
             continue

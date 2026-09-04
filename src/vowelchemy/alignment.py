@@ -37,10 +37,14 @@ from .corpus import CorpusInventory
 from .runners import CommandResult, ToolStatus, probe_version, run_streaming, which
 
 MFA_INSTALL_HINT = (
-    "Install MFA in its own environment, e.g.\n"
-    "  conda create -n aligner -c conda-forge montreal-forced-aligner\n"
-    "  conda activate aligner\n"
-    "then launch vowelchemy from that environment so `mfa` is on PATH."
+    "MFA installs through conda/mamba only — pip cannot deliver a working\n"
+    "aligner, because its Kaldi bindings are published on conda-forge:\n"
+    "  mamba create -n aligner -c conda-forge montreal-forced-aligner\n"
+    "  mamba activate aligner\n"
+    "  mfa model download acoustic english_us_arpa\n"
+    "  mfa model download dictionary english_us_arpa\n"
+    "Then use 'Set up tools' in the app to point Vowelchemy at that\n"
+    "environment — you never have to activate it again."
 )
 
 

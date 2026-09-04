@@ -39,6 +39,7 @@ from . import (
     phontrast,
     projects,
     sample_data,
+    toolenv,
     trajectories,
     visualization as viz,
 )
@@ -58,6 +59,7 @@ from .corpus import (
 )
 from .glossary import GLOSSARY, REFERENCES, jsd_verdict
 from .jobs import JobManager
+from .runners import run_streaming
 from .schema import ColumnSchema
 
 app = FastAPI(title="Vowelchemy API", version="0.1.0")
@@ -319,6 +321,8 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
             "remove_outliers": s.remove_outliers,
         },
         "browse_confined": BROWSE_ROOT is not None,
+        "tool_env": str(toolenv.selected_prefix()) if toolenv.selected_prefix() else None,
+        "app": toolenv.app_info(),
     }
 
 
@@ -495,6 +499,74 @@ def extract(req: ExtractRequest, x_vowelchemy_session: Optional[str] = Header(de
                 "csv_path": str(res.csv_path) if res.csv_path else None, "notes": res.notes}
 
     return {"job_id": JOBS.start("extract", target).id}
+
+
+# --------------------------------------------------------------------------- #
+# Tool environments (borrow MFA / new-fave from conda without activating it)
+# --------------------------------------------------------------------------- #
+class ToolEnvRequest(BaseModel):
+    path: Optional[str] = None  # None clears the selection
+
+
+class ToolInstallRequest(BaseModel):
+    tool: str = "newfave"
+
+
+def _tools_payload() -> dict:
+    mfa = alignment.mfa_status()
+    nf = extraction.newfave_status()
+    install: dict[str, dict] = {}
+    for tool in ("mfa", "newfave"):
+        cmd, reason = toolenv.pip_install_plan(tool)
+        install[tool] = {"possible": cmd is not None, "reason": reason}
+    selected = toolenv.selected_prefix()
+    return {
+        "tools": {
+            "mfa": {"available": mfa.available, "version": mfa.version,
+                    "path": mfa.path, "hint": mfa.install_hint},
+            "newfave": {"available": nf.available, "version": nf.version,
+                        "path": nf.path, "hint": nf.install_hint},
+        },
+        "selected": str(selected) if selected else None,
+        "selected_locked": bool(os.environ.get("VOWELCHEMY_TOOL_ENV")),
+        "install": install,
+        "app": toolenv.app_info(),
+    }
+
+
+@app.get("/api/tools")
+def tools_overview():
+    return _tools_payload()
+
+
+@app.get("/api/tools/environments")
+def tool_environments():
+    """Scan for conda/mamba environments that already contain the tools."""
+    envs = toolenv.discover_environments()
+    return {"environments": [e.as_dict() for e in envs], **_tools_payload()}
+
+
+@app.post("/api/tools/environment")
+def set_tool_environment(req: ToolEnvRequest):
+    try:
+        toolenv.set_selected_prefix(req.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _tools_payload()
+
+
+@app.post("/api/tools/install")
+def install_tool(req: ToolInstallRequest):
+    """Install a pip-installable tool (new-fave) into the app's environment."""
+    cmd, reason = toolenv.pip_install_plan(req.tool)
+    if cmd is None:
+        raise HTTPException(status_code=400, detail=reason)
+
+    def target(emit):
+        res = run_streaming(cmd, on_output=emit)
+        return {"ok": res.ok, "tool": req.tool, **_tools_payload()}
+
+    return {"job_id": JOBS.start("install", target).id}
 
 
 @app.get("/api/jobs/{job_id}")

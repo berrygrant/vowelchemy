@@ -29,6 +29,11 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=7", "ruff>=0.1", "httpx>=0.27"]
+# Formant extraction. new-fave is a normal pip package (Python 3.10+), so it can
+# ride along: `pip install "vowelchemy[extract]"`. MFA deliberately cannot —
+# its Kaldi bindings are published on conda-forge only, so pip installs a broken
+# aligner. Install MFA with conda/mamba and point the app at that environment.
+extract = ["new-fave>=1.0"]
 
 [project.scripts]
 vowelchemy = "vowelchemy.cli:main"
