@@ -43,6 +43,7 @@ from . import (
     trajectories,
     visualization as viz,
 )
+from . import __version__
 from .constants import (
     ARPABET_VOWELS,
     DEFAULT_ACOUSTIC_MODEL,
@@ -62,8 +63,30 @@ from .jobs import JobManager
 from .runners import run_streaming
 from .schema import ColumnSchema
 
-app = FastAPI(title="Vowelchemy API", version="0.1.0")
+app = FastAPI(title="Vowelchemy API", version=__version__)
 JOBS = JobManager()
+
+
+@app.on_event("startup")
+def _warm_tool_probes() -> None:
+    """Probe the external tools once, off the request path.
+
+    Starting MFA/new-fave/R to read a version takes seconds; doing it while the
+    first status request waits makes the app feel stuck on exactly the machines
+    that have the tools. Warm the cache in the background instead.
+    """
+    import threading
+
+    threading.Thread(target=_warm_now, daemon=True).start()
+
+
+def _warm_now() -> None:
+    """Fill the version cache by actually running each tool once."""
+    for probe in (alignment.mfa_status, extraction.newfave_status, phontrast.phontrast_status):
+        try:
+            probe(wait=True)
+        except Exception:  # a broken tool must never stop the server
+            pass
 
 # Optional confinement root for the folder browser (local-tool security).
 BROWSE_ROOT: Optional[str] = os.environ.get("VOWELCHEMY_BROWSE_ROOT") or None
@@ -510,16 +533,51 @@ class ToolEnvRequest(BaseModel):
 
 class ToolInstallRequest(BaseModel):
     tool: str = "newfave"
+    prefix: Optional[str] = None  # install into this environment instead of ours
 
 
-def _tools_payload() -> dict:
+# Discovery shells out to conda, so cache it: every tools response carries the
+# environment list (a response that omitted it used to blank the list in the UI).
+_ENV_CACHE: dict = {"at": 0.0, "envs": []}
+_ENV_CACHE_TTL = 120.0
+
+
+def _environments(force: bool = False) -> list[dict]:
+    import time
+
+    if force or not _ENV_CACHE["envs"] or (time.time() - _ENV_CACHE["at"]) > _ENV_CACHE_TTL:
+        _ENV_CACHE["envs"] = [e.as_dict() for e in toolenv.discover_environments()]
+        _ENV_CACHE["at"] = time.time()
+    envs = list(_ENV_CACHE["envs"])
+    # A hand-picked environment may sit outside the scanned locations; keep it
+    # listed so it can still show as "in use".
+    selected = toolenv.selected_prefix()
+    if selected and not any(e["path"] == str(selected) for e in envs):
+        tools = toolenv.tools_in(selected)
+        if tools:
+            envs.insert(0, toolenv.ToolEnvironment(path=str(selected), name=selected.name,
+                                                   tools=tools, source="chosen").as_dict())
+    return envs
+
+
+def _tools_payload(force_scan: bool = False) -> dict:
     mfa = alignment.mfa_status()
     nf = extraction.newfave_status()
+    selected = toolenv.selected_prefix()
     install: dict[str, dict] = {}
     for tool in ("mfa", "newfave"):
         cmd, reason = toolenv.pip_install_plan(tool)
-        install[tool] = {"possible": cmd is not None, "reason": reason}
-    selected = toolenv.selected_prefix()
+        entry = {"possible": cmd is not None, "reason": reason, "target": "app"}
+        if cmd is None and selected is not None:
+            # The app can't install it into itself (packaged build, or too old a
+            # Python) — but it can equip the environment the user picked.
+            env_cmd, env_reason = toolenv.pip_install_plan(tool, prefix=selected)
+            if env_cmd is not None:
+                entry = {"possible": True, "reason": "", "target": "env",
+                         "prefix": str(selected), "env_name": selected.name}
+            elif env_reason:
+                entry["reason"] = f"{reason} ({env_reason})" if reason else env_reason
+        install[tool] = entry
     return {
         "tools": {
             "mfa": {"available": mfa.available, "version": mfa.version,
@@ -530,6 +588,7 @@ def _tools_payload() -> dict:
         "selected": str(selected) if selected else None,
         "selected_locked": bool(os.environ.get("VOWELCHEMY_TOOL_ENV")),
         "install": install,
+        "environments": _environments(force=force_scan),
         "app": toolenv.app_info(),
     }
 
@@ -540,31 +599,39 @@ def tools_overview():
 
 
 @app.get("/api/tools/environments")
-def tool_environments():
+def tool_environments(refresh: bool = False):
     """Scan for conda/mamba environments that already contain the tools."""
-    envs = toolenv.discover_environments()
-    return {"environments": [e.as_dict() for e in envs], **_tools_payload()}
+    return _tools_payload(force_scan=refresh)
 
 
 @app.post("/api/tools/environment")
 def set_tool_environment(req: ToolEnvRequest):
+    import threading
+
     try:
         toolenv.set_selected_prefix(req.path)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Switching environments clears the version cache; refill it off the request
+    # path so the click feels instant and versions appear on the next poll.
+    threading.Thread(target=_warm_now, daemon=True).start()
     return _tools_payload()
 
 
 @app.post("/api/tools/install")
 def install_tool(req: ToolInstallRequest):
-    """Install a pip-installable tool (new-fave) into the app's environment."""
-    cmd, reason = toolenv.pip_install_plan(req.tool)
+    """Install a pip-installable tool (new-fave) here, or into a chosen environment."""
+    prefix = req.prefix or (str(toolenv.selected_prefix() or "") or None
+                            if toolenv.pip_install_plan(req.tool)[0] is None else None)
+    cmd, reason = toolenv.pip_install_plan(req.tool, prefix=prefix)
     if cmd is None:
         raise HTTPException(status_code=400, detail=reason)
 
     def target(emit):
+        emit(f"Installing into {prefix or 'this app'}…")
         res = run_streaming(cmd, on_output=emit)
-        return {"ok": res.ok, "tool": req.tool, **_tools_payload()}
+        toolenv.invalidate_caches()  # the tool we just installed must be re-probed
+        return {"ok": res.ok, "tool": req.tool, **_tools_payload(force_scan=True)}
 
     return {"job_id": JOBS.start("install", target).id}
 

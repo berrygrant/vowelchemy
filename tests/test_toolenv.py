@@ -85,9 +85,35 @@ def test_status_reports_a_borrowed_tool(tmp_path):
 
     assert alignment.mfa_status().available is False
     toolenv.set_selected_prefix(str(make_env(tmp_path / "aligner", "mfa")))
-    status = alignment.mfa_status()
+    status = alignment.mfa_status(wait=True)
     assert status.available is True
     assert "9.9.9" in (status.version or "")
+
+
+def test_availability_never_waits_for_a_slow_tool(tmp_path):
+    """Picking an environment must not block while the tool boots.
+
+    MFA and new-fave take seconds just to print a version, so status reports
+    presence immediately (a filesystem check) and fills the version in later.
+    """
+    import time
+
+    from vowelchemy import alignment
+
+    env = tmp_path / "slow"
+    (env / "bin").mkdir(parents=True)
+    exe = env / "bin" / "mfa"
+    exe.write_text("#!/bin/sh\nsleep 5\necho 'mfa 3.4.2'\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+
+    toolenv.set_selected_prefix(str(env))
+    started = time.perf_counter()
+    status = alignment.mfa_status()  # non-blocking by default
+    elapsed = time.perf_counter() - started
+
+    assert status.available is True
+    assert elapsed < 1.0, f"status blocked for {elapsed:.1f}s on a slow tool"
+    assert status.version is None  # unknown for now; a later poll shows it
 
 
 def test_discovery_finds_conda_environments(isolated_home):
@@ -138,7 +164,42 @@ def test_pip_plan_offers_newfave_but_never_mfa():
 def test_pip_plan_refuses_inside_a_frozen_app(monkeypatch):
     monkeypatch.setattr(sys, "frozen", True, raising=False)
     cmd, reason = toolenv.pip_install_plan("newfave")
-    assert cmd is None and "packaged app" in reason
+    assert cmd is None and "can't install Python packages into itself" in reason
+
+
+def _fake_python_env(tmp_path, version="3 12"):
+    """An environment whose python answers a version probe and a pip install."""
+    b = tmp_path / "env" / "bin"
+    b.mkdir(parents=True)
+    py = b / "python3"
+    py.write_text(
+        "#!/bin/sh\n"
+        f'case "$*" in *version_info*) echo "{version}";; '
+        '*"pip install"*) echo "Successfully installed";; esac\nexit 0\n'
+    )
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
+    return tmp_path / "env"
+
+
+def test_pip_plan_can_target_another_environment(tmp_path):
+    """The packaged app has no pip of its own, but can equip a chosen env."""
+    env = _fake_python_env(tmp_path)
+    cmd, reason = toolenv.pip_install_plan("newfave", prefix=env)
+    assert cmd is not None and reason == ""
+    assert cmd[0] == str(env / "bin" / "python3")
+    assert cmd[1:] == ["-m", "pip", "install", "new-fave"]
+
+
+def test_pip_plan_rejects_an_environment_on_old_python(tmp_path):
+    env = _fake_python_env(tmp_path, version="3 9")
+    cmd, reason = toolenv.pip_install_plan("newfave", prefix=env)
+    assert cmd is None and "3.10 or newer" in reason
+
+
+def test_pip_plan_never_targets_mfa_even_with_a_prefix(tmp_path):
+    env = _fake_python_env(tmp_path)
+    cmd, reason = toolenv.pip_install_plan("mfa", prefix=env)
+    assert cmd is None and "conda-forge" in reason
 
 
 def test_app_info_reports_running_code():

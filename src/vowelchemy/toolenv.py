@@ -33,7 +33,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 # Tool key -> the executable that proves the tool is present.
 TOOL_EXECUTABLES = {"mfa": "mfa", "newfave": "fave-extract"}
@@ -226,6 +226,66 @@ def discover_environments(use_conda_cli: bool = True) -> list[ToolEnvironment]:
 # --------------------------------------------------------------------------- #
 # Selection + resolution
 # --------------------------------------------------------------------------- #
+# --------------------------------------------------------------------------- #
+# Version-probe cache
+# --------------------------------------------------------------------------- #
+# Probing a tool means starting it: `fave-extract --version` takes ~2s and MFA
+# is slower still. The sidebar polls status continuously, so without a cache the
+# whole app crawls on exactly the machines that *have* the tools installed.
+_VERSION_CACHE: dict[str, tuple[float, Optional[str]]] = {}
+_VERSION_TTL = 600.0
+
+
+def cached_version(key: str, probe: "Callable[[], Optional[str]]") -> Optional[str]:
+    """Return a probed version, re-running ``probe`` at most every 10 minutes."""
+    import time
+
+    hit = _VERSION_CACHE.get(key)
+    now = time.time()
+    if hit is not None and (now - hit[0]) < _VERSION_TTL:
+        return hit[1]
+    value = probe()
+    _VERSION_CACHE[key] = (now, value)
+    return value
+
+
+_INFLIGHT: set[str] = set()
+
+
+def cached_version_async(key: str, probe: "Callable[[], Optional[str]]") -> Optional[str]:
+    """Cached version if known; otherwise probe in the background and return None.
+
+    Availability must never wait on a tool launching. Callers report the tool as
+    present (the executable exists) with an unknown version, and the version
+    appears on the next poll a moment later.
+    """
+    import threading
+    import time
+
+    hit = _VERSION_CACHE.get(key)
+    if hit is not None and (time.time() - hit[0]) < _VERSION_TTL:
+        return hit[1]
+    if key not in _INFLIGHT:
+        _INFLIGHT.add(key)
+
+        def run() -> None:
+            try:
+                value = probe()
+            except Exception:
+                value = None
+            _VERSION_CACHE[key] = (time.time(), value)
+            _INFLIGHT.discard(key)
+
+        threading.Thread(target=run, daemon=True).start()
+    return hit[1] if hit is not None else None
+
+
+def invalidate_caches() -> None:
+    """Forget probed versions (after switching environments or installing)."""
+    _VERSION_CACHE.clear()
+    _INFLIGHT.clear()
+
+
 def selected_prefix() -> Optional[Path]:
     """The environment the user chose, if any (env var wins over settings)."""
     override = os.environ.get("VOWELCHEMY_TOOL_ENV")
@@ -245,6 +305,7 @@ def set_selected_prefix(path: Optional[str]) -> dict[str, str]:
     if not path:
         settings.pop("tool_env", None)
         write_settings(settings)
+        invalidate_caches()
         return {}
     prefix = Path(path).expanduser()
     if not prefix.is_dir():
@@ -258,6 +319,7 @@ def set_selected_prefix(path: Optional[str]) -> dict[str, str]:
         )
     settings["tool_env"] = str(prefix)
     write_settings(settings)
+    invalidate_caches()  # probe the new environment's tools fresh
     return tools
 
 
@@ -302,23 +364,64 @@ def subprocess_env(base: Optional[dict] = None) -> dict:
 # --------------------------------------------------------------------------- #
 # Installing what can be installed
 # --------------------------------------------------------------------------- #
-def pip_install_plan(tool: str) -> tuple[Optional[list[str]], str]:
-    """The command to install ``tool`` here, or ``None`` plus the reason why not."""
+def env_python(prefix: str | os.PathLike) -> Optional[str]:
+    """The interpreter inside an environment prefix, if there is one."""
+    for name in ("python3", "python", "python.exe"):
+        for d in bin_dirs(prefix):
+            candidate = d / name
+            if candidate.is_file() and os.access(candidate, os.X_OK):
+                return str(candidate)
+    return None
+
+
+def _python_version(executable: str) -> Optional[tuple[int, int]]:
+    try:
+        res = subprocess.run(
+            [executable, "-c", "import sys; print(sys.version_info[0], sys.version_info[1])"],
+            capture_output=True, text=True, timeout=20,
+        )
+        major, minor = res.stdout.split()[:2]
+        return int(major), int(minor)
+    except (subprocess.SubprocessError, OSError, ValueError, IndexError):
+        return None
+
+
+def pip_install_plan(
+    tool: str, prefix: Optional[str | os.PathLike] = None
+) -> tuple[Optional[list[str]], str]:
+    """Command to install ``tool``, or ``None`` plus the reason why not.
+
+    With ``prefix``, installs into *that* environment (which is how a packaged
+    app — with no pip of its own — can still equip a conda environment the user
+    already picked). Without it, installs into the app's own environment.
+    """
     package = PIP_INSTALLABLE.get(tool)
     if package is None:
         if tool == "mfa":
             return None, ("MFA can't be installed with pip — its Kaldi bindings come "
                           "from conda-forge only. " + MFA_CONDA_HINT)
         return None, f"Unknown tool: {tool}"
+
+    if prefix is not None:
+        python = env_python(prefix)
+        if python is None:
+            return None, f"No Python interpreter found in {prefix}."
+        version = _python_version(python)
+        if version is not None and version < (3, 10):
+            return None, (f"{Path(prefix).name} runs Python {version[0]}.{version[1]}, "
+                          f"but {package} needs 3.10 or newer.")
+        return [python, "-m", "pip", "install", package], ""
+
     if getattr(sys, "frozen", False):
-        return None, ("The packaged app can't install Python packages into itself. "
-                      f"Install {package} in a conda environment (or a plain "
-                      "virtual environment) and point Vowelchemy at it.")
+        return None, ("The downloadable app can't install Python packages into itself. "
+                      "Pick a conda/mamba environment above and Vowelchemy can install "
+                      f"{package} into that instead — or create one with: "
+                      "mamba create -n extract -c conda-forge python=3.12")
     if sys.version_info < (3, 10):
         current = f"{sys.version_info.major}.{sys.version_info.minor}"
-        return None, (f"new-fave needs Python 3.10 or newer; this app is running on "
-                      f"{current}. Install it in a newer environment and point "
-                      "Vowelchemy at that instead.")
+        return None, (f"{package} needs Python 3.10 or newer; this app is running on "
+                      f"{current}. Pick an environment above with a newer Python and "
+                      "Vowelchemy can install it there instead.")
     return [sys.executable, "-m", "pip", "install", package], ""
 
 

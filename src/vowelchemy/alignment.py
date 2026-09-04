@@ -48,10 +48,14 @@ MFA_INSTALL_HINT = (
 )
 
 
-def mfa_status(executable: str = "mfa") -> ToolStatus:
-    """Detect whether MFA is available and grab its version."""
+def mfa_status(executable: str = "mfa", wait: bool = False) -> ToolStatus:
+    """Detect whether MFA is available and grab its version.
+
+    ``wait=False`` (the default, used by the API) never blocks on MFA starting:
+    presence is a filesystem check and the version fills in on a later poll.
+    """
     path = which(executable)
-    version = probe_version(executable, version_args=("version",)) if path else None
+    version = probe_version(executable, version_args=("version",), wait=wait) if path else None
     return ToolStatus(name="Montreal Forced Aligner", path=path,
                       version=version, install_hint=MFA_INSTALL_HINT)
 

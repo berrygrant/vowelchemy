@@ -43,9 +43,10 @@ NEWFAVE_INSTALL_HINT = (
 )
 
 
-def newfave_status(executable: str = "fave-extract") -> ToolStatus:
+def newfave_status(executable: str = "fave-extract", wait: bool = False) -> ToolStatus:
+    """Detect new-fave; see :func:`vowelchemy.alignment.mfa_status` on ``wait``."""
     path = which(executable)
-    version = probe_version(executable, version_args=("--version",)) if path else None
+    version = probe_version(executable, version_args=("--version",), wait=wait) if path else None
     return ToolStatus(name="new-fave (fave-extract)", path=path,
                       version=version, install_hint=NEWFAVE_INSTALL_HINT)
 

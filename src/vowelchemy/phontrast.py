@@ -33,6 +33,7 @@ from typing import Callable, Optional, Sequence
 
 import pandas as pd
 
+from . import toolenv
 from .runners import CommandResult, run_streaming, which
 
 PHONTRAST_INSTALL_HINT = (
@@ -62,11 +63,28 @@ class PhontrastStatus:
         return bool(self.rscript_path) and self.package_installed
 
 
-def phontrast_status(rscript: str = "Rscript") -> PhontrastStatus:
-    """Detect Rscript and whether phontrast (or legacy phonJSD) is installed."""
+def phontrast_status(rscript: str = "Rscript", wait: bool = False) -> PhontrastStatus:
+    """Detect Rscript and whether phontrast (or legacy phonJSD) is installed.
+
+    Cached like the other tool probes: starting R twice per status poll is slow
+    enough to make the sidebar feel stuck. ``wait=False`` probes in the
+    background, so a request never waits for R to boot.
+    """
     path = which(rscript)
     if not path:
         return PhontrastStatus(rscript_path=None)
+    key = f"phontrast::{path}"
+    probe = lambda: _probe_r_packages(rscript, path)  # noqa: E731
+    cached = (toolenv.cached_version(key, probe) if wait
+              else toolenv.cached_version_async(key, probe))
+    if cached is None:
+        return PhontrastStatus(rscript_path=path)
+    package, _, version = cached.partition(" ")
+    return PhontrastStatus(rscript_path=path, package=package, version=version or None)
+
+
+def _probe_r_packages(rscript: str, path: str) -> Optional[str]:
+    """``"<package> <version>"`` for the first installed R package, else ``None``."""
     for pkg in _R_PACKAGES:
         try:
             check = subprocess.run(
@@ -75,20 +93,20 @@ def phontrast_status(rscript: str = "Rscript") -> PhontrastStatus:
                 capture_output=True, text=True, timeout=60,
             )
         except (subprocess.SubprocessError, OSError):
-            return PhontrastStatus(rscript_path=path)
+            return None
         if not check.stdout.strip().endswith("TRUE"):
             continue
-        version = None
+        version = ""
         try:
             v = subprocess.run(
                 [rscript, "-e", f'cat(as.character(packageVersion("{pkg}")))'],
                 capture_output=True, text=True, timeout=60,
             )
-            version = v.stdout.strip() or None
+            version = v.stdout.strip()
         except (subprocess.SubprocessError, OSError):
             pass
-        return PhontrastStatus(rscript_path=path, package=pkg, version=version)
-    return PhontrastStatus(rscript_path=path)
+        return f"{pkg} {version}".strip()
+    return None
 
 
 @dataclass

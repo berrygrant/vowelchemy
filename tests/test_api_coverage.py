@@ -183,8 +183,40 @@ def test_tools_overview_and_environment_selection(client, tmp_path, monkeypatch)
     # the choice shows up in the status the sidebar polls
     assert client.get("/api/status").json()["tool_env"] == str(env)
 
+    # Regression: every tools response must carry the environment list. When the
+    # POST omitted it, the UI blanked its list and selecting looked like a no-op.
+    assert "environments" in chosen
+    assert any(e["path"] == str(env) for e in chosen["environments"])
+
     cleared = client.post("/api/tools/environment", json={"path": None}).json()
     assert cleared["selected"] is None
+    assert "environments" in cleared
+
+
+def test_install_can_target_the_selected_environment_when_the_app_cannot(
+    client, tmp_path, monkeypatch
+):
+    """The packaged app can't pip into itself, so it offers the chosen env instead."""
+    import stat
+    import sys
+
+    monkeypatch.setenv("VOWELCHEMY_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("VOWELCHEMY_TOOL_ENV", raising=False)
+    env = tmp_path / "extract"
+    (env / "bin").mkdir(parents=True)
+    py = env / "bin" / "python3"
+    py.write_text('#!/bin/sh\ncase "$*" in *version_info*) echo "3 12";; esac\nexit 0\n')
+    py.chmod(py.stat().st_mode | stat.S_IEXEC)
+    exe = env / "bin" / "fave-extract"
+    exe.write_text("#!/bin/sh\necho 1.3.0\n")
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+
+    client.post("/api/tools/environment", json={"path": str(env)})
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    body = client.get("/api/tools").json()
+    assert body["install"]["newfave"]["possible"] is True
+    assert body["install"]["newfave"]["target"] == "env"
+    assert body["install"]["newfave"]["env_name"] == "extract"
 
 
 def test_tools_environments_listing(client, tmp_path, monkeypatch):

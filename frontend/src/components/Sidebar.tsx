@@ -15,13 +15,28 @@ const STAGES: { id: Stage; n: number; label: string }[] = [
   { id: 'separation', n: 6, label: 'Separation' },
 ]
 
-function ToolRow({ name, info, absentNote }: { name: string; info?: ToolInfo; absentNote?: string }) {
+function ToolRow({
+  name,
+  info,
+  absentNote,
+  onClick,
+}: {
+  name: string
+  info?: ToolInfo
+  absentNote?: string
+  onClick?: () => void
+}) {
   const ok = info?.available
   return (
-    <div className="tool-row" title={info && !ok ? info.hint : undefined}>
+    <div
+      className={`tool-row${onClick ? ' tool-row-click' : ''}`}
+      title={info && !ok ? info.hint : info?.path ?? undefined}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+    >
       <span className={`dot ${ok ? 'dot-on' : ''}`} />
       <span className="tool-name">{name}</span>
-      <span className="tool-ver">{ok ? info?.version ?? 'ready' : absentNote ?? 'not detected'}</span>
+      <span className="tool-ver">{ok ? info?.version ?? 'ready' : absentNote ?? 'set up…'}</span>
     </div>
   )
 }
@@ -64,8 +79,8 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
 
       <div className="side-section">
         <div className="side-heading">Tools</div>
-        <ToolRow name="MFA" info={status?.tools.mfa} />
-        <ToolRow name="new-fave" info={status?.tools.newfave} />
+        <ToolRow name="MFA" info={status?.tools.mfa} onClick={() => setShowTools(true)} />
+        <ToolRow name="new-fave" info={status?.tools.newfave} onClick={() => setShowTools(true)} />
         <ToolRow name="phontrast" info={status?.tools.phontrast} absentNote="built-in JSD" />
         <button className="btn btn-small side-tools" onClick={() => setShowTools(true)}>
           🔧 Set up tools

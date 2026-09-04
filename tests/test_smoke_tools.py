@@ -13,9 +13,10 @@ from vowelchemy.analysis import add_vowel_labels, join_demographics
 from vowelchemy.normalization import normalize
 from vowelchemy.schema import ColumnSchema
 
-_mfa = alignment.mfa_status()
-_nf = extraction.newfave_status()
-_pj = phontrast.phontrast_status()
+# wait=True: these tests assert on real version strings, so probe synchronously
+_mfa = alignment.mfa_status(wait=True)
+_nf = extraction.newfave_status(wait=True)
+_pj = phontrast.phontrast_status(wait=True)
 
 
 @pytest.mark.skipif(not _mfa.available, reason="MFA not installed")

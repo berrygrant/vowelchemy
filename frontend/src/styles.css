@@ -691,6 +691,13 @@ input[type='file'] {
   justify-content: center;
   margin-top: 8px;
 }
+.tool-row-click {
+  cursor: pointer;
+  border-radius: 6px;
+}
+.tool-row-click:hover {
+  background: var(--bg);
+}
 .tool-env-line {
   margin-top: 6px;
   overflow: hidden;
@@ -725,6 +732,10 @@ input[type='file'] {
 }
 .env-row:hover {
   border-color: var(--primary);
+}
+.env-row-active {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

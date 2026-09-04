@@ -109,11 +109,24 @@ def run_streaming(
                          output, output, timed_out=timed_out)
 
 
-def probe_version(executable: str, version_args: Sequence[str] = ("version",)) -> Optional[str]:
-    """Best-effort version probe for a CLI tool."""
+def probe_version(
+    executable: str, version_args: Sequence[str] = ("version",), wait: bool = True
+) -> Optional[str]:
+    """Best-effort version probe for a CLI tool.
+
+    Cached, because probing means *starting* the tool — seconds for MFA and
+    new-fave. With ``wait=False`` an unknown version is probed in the background
+    and ``None`` comes back immediately, which is what request handlers want:
+    whether a tool exists is a filesystem question and must stay instant.
+    """
     path = which(executable)
     if not path:
         return None
+    probe = lambda: _probe_version_uncached(path, version_args)  # noqa: E731
+    return toolenv.cached_version(path, probe) if wait else toolenv.cached_version_async(path, probe)
+
+
+def _probe_version_uncached(path: str, version_args: Sequence[str]) -> Optional[str]:
     # De-duplicate so e.g. version_args=("--version",) doesn't run twice.
     candidates = list(dict.fromkeys((tuple(version_args), ("--version",), ("-V",))))
     for candidate in candidates:

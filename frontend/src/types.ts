@@ -37,11 +37,19 @@ export interface ToolEnvironment {
   tools: string[]
 }
 
+export interface ToolInstallOption {
+  possible: boolean
+  reason: string
+  target?: 'app' | 'env'
+  prefix?: string
+  env_name?: string
+}
+
 export interface ToolsPayload {
   tools: { mfa: ToolInfo; newfave: ToolInfo }
   selected: string | null
   selected_locked?: boolean
-  install: Record<string, { possible: boolean; reason: string }>
+  install: Record<string, ToolInstallOption>
   app: AppInfo
   environments?: ToolEnvironment[]
 }

@@ -87,10 +87,11 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
 
     selected = toolenv.selected_prefix()
     print(f"\nTool environment: {selected or 'none selected (using PATH)'}")
-    pj = phontrast.phontrast_status()
-    rows = [("MFA", alignment.mfa_status().available, _tool_detail(alignment.mfa_status())),
-            ("new-fave", extraction.newfave_status().available,
-             _tool_detail(extraction.newfave_status())),
+    # The CLI can afford to wait for real version strings.
+    pj = phontrast.phontrast_status(wait=True)
+    mfa, nf = alignment.mfa_status(wait=True), extraction.newfave_status(wait=True)
+    rows = [("MFA", mfa.available, _tool_detail(mfa)),
+            ("new-fave", nf.available, _tool_detail(nf)),
             ("phontrast (R)", pj.available,
              f"{pj.package} {pj.version}" if pj.available else "not found (built-in JSD used)")]
     for label, available, detail in rows:
