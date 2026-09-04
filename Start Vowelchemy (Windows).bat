@@ -31,6 +31,20 @@ if errorlevel 1 (
   exit /b 1
 )
 
+rem Install on the first run, and re-install whenever the requirements change.
+rem The install is *editable*, so pulling new code takes effect on the next
+rem launch - otherwise this folder would keep running the version that was
+rem installed the very first time.
+set "STAMP=.venv-app\.vowelchemy-stamp"
+set "WANT="
+for /f "skip=1 delims=" %%h in ('certutil -hashfile pyproject.toml MD5 2^>nul') do (
+  if not defined WANT set "WANT=%%h"
+)
+set "WANT=%WANT: =%"
+set "HAVE="
+if exist "%STAMP%" set /p HAVE=<"%STAMP%"
+
+set "NEED_INSTALL="
 if not exist ".venv-app\Scripts\vowelchemy.exe" (
   echo First-time setup: installing Vowelchemy into a private environment.
   echo This takes a few minutes and needs an internet connection...
@@ -40,14 +54,22 @@ if not exist ".venv-app\Scripts\vowelchemy.exe" (
     pause
     exit /b 1
   )
+  set "NEED_INSTALL=1"
+) else if not "%WANT%"=="%HAVE%" (
+  echo Vowelchemy's requirements changed - updating ^(this may take a minute^)...
+  set "NEED_INSTALL=1"
+)
+
+if defined NEED_INSTALL (
   ".venv-app\Scripts\python" -m pip install --upgrade pip >nul 2>&1
-  ".venv-app\Scripts\pip" install .
+  ".venv-app\Scripts\pip" install -e .
   if errorlevel 1 (
     echo Installing Vowelchemy failed. Check your internet connection and try again.
     echo To retry setup from scratch, delete the .venv-app folder first.
     pause
     exit /b 1
   )
+  >"%STAMP%" echo %WANT%
   echo Setup complete.
 )
 
