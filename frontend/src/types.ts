@@ -2,6 +2,7 @@ export interface ToolInfo {
   available: boolean
   version: string | null
   hint: string
+  path?: string | null
 }
 
 export interface Status {
@@ -16,6 +17,33 @@ export interface Status {
     remove_outliers?: boolean
   }
   browse_confined?: boolean
+  tool_env?: string | null
+  app?: AppInfo
+}
+
+export interface AppInfo {
+  version: string
+  location: string
+  python: string
+  executable: string
+  frozen: boolean
+  webui: string | null
+}
+
+export interface ToolEnvironment {
+  path: string
+  name: string
+  source: string
+  tools: string[]
+}
+
+export interface ToolsPayload {
+  tools: { mfa: ToolInfo; newfave: ToolInfo }
+  selected: string | null
+  selected_locked?: boolean
+  install: Record<string, { possible: boolean; reason: string }>
+  app: AppInfo
+  environments?: ToolEnvironment[]
 }
 
 export interface TablePayload {

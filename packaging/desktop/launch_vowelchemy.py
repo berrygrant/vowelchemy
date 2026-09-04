@@ -13,11 +13,14 @@ unavailable (some Linux builds), we fall back to console mode and Ctrl+C.
 
 from __future__ import annotations
 
+import os
 import socket
+import sys
 import threading
 import time
 import urllib.request
 import webbrowser
+from typing import Optional
 
 
 def _free_port() -> int:
@@ -38,6 +41,13 @@ def _wait_until_up(url: str, timeout: float = 60.0) -> bool:
     return False
 
 
+def _icon_path() -> Optional[str]:
+    """Where icon.png landed — beside this file, or unpacked by PyInstaller."""
+    base = getattr(sys, "_MEIPASS", None) or os.path.dirname(os.path.abspath(__file__))
+    candidate = os.path.join(base, "icon.png")
+    return candidate if os.path.isfile(candidate) else None
+
+
 def _status_window(url: str) -> None:
     """Block in a tiny Tk window; closing it exits the process (and server)."""
     import tkinter as tk
@@ -45,6 +55,12 @@ def _status_window(url: str) -> None:
     root = tk.Tk()
     root.title("Vowelchemy")
     root.resizable(False, False)
+    icon = _icon_path()
+    if icon:
+        try:
+            root.iconphoto(True, tk.PhotoImage(file=icon))
+        except tk.TclError:
+            pass  # a missing image format is no reason to fail the launch
     frame = tk.Frame(root, padx=18, pady=14)
     frame.pack()
     tk.Label(frame, text="🧪 Vowelchemy is running", font=("TkDefaultFont", 13, "bold")).pack(

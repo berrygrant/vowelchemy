@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024"
+     role="img" aria-label="Vowelchemy: a flask holding a vowel triangle">
+  <title>Vowelchemy</title>
+  <defs>
+    <!-- cyan -> blue -> violet, following the vowel triangle clockwise -->
+    <linearGradient id="vc-edge" x1="0.18" y1="0.30" x2="0.82" y2="0.88">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="0.45" stop-color="#3B6FF0"/>
+      <stop offset="1" stop-color="#9B30F0"/>
+    </linearGradient>
+    <radialGradient id="vc-node-cyan" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#5FE7FA"/>
+      <stop offset="1" stop-color="#12C7E6"/>
+    </radialGradient>
+    <radialGradient id="vc-node-blue" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#6E9BF7"/>
+      <stop offset="1" stop-color="#2F63EC"/>
+    </radialGradient>
+    <radialGradient id="vc-node-violet" cx="0.35" cy="0.3" r="0.85">
+      <stop offset="0" stop-color="#B863F7"/>
+      <stop offset="1" stop-color="#8F1FE8"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Flask silhouette in deep indigo: lip, tapered neck, round body, footed base.
+       Drawn as overlapping shapes in one colour, so the joins disappear. -->
+  <g fill="#191A6E">
+    <rect x="386" y="76" width="260" height="76" rx="38"/>
+    <path d="M 405 130
+             L 627 130
+             L 627 248
+             C 627 292 652 312 690 330
+             L 342 330
+             C 380 312 405 292 405 248
+             Z"/>
+    <circle cx="512" cy="578" r="330"/>
+    <rect x="346" y="856" width="332" height="76" rx="38"/>
+  </g>
+
+  <!-- Vowel triangle: three formant nodes joined by outward-bowing arcs -->
+  <g fill="none" stroke="url(#vc-edge)" stroke-width="30" stroke-linecap="round">
+    <path d="M 352 424 Q 560 400 700 596"/>
+    <path d="M 700 596 Q 620 760 424 792"/>
+    <path d="M 424 792 Q 320 590 352 424"/>
+  </g>
+  <circle cx="352" cy="424" r="52" fill="url(#vc-node-cyan)"/>
+  <circle cx="700" cy="596" r="52" fill="url(#vc-node-blue)"/>
+  <circle cx="424" cy="792" r="52" fill="url(#vc-node-violet)"/>
+
+  <!-- The alchemical spark -->
+  <path fill="#FBBF24" d="
+    M 690 330
+    C 700 372 712 384 754 394
+    C 712 404 700 416 690 458
+    C 680 416 668 404 626 394
+    C 668 384 680 372 690 330
+    z"/>
+</svg>

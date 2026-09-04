@@ -4,6 +4,7 @@ Mostly a convenience layer over the library so the pipeline is scriptable and
 the web app is one command away::
 
     vowelchemy app                       # launch the API + React app
+    vowelchemy doctor                    # what's installed, where, which tools
     vowelchemy demo ./demo               # write a synthetic corpus dataset
     vowelchemy discover ./audio --transcripts ./texts
     vowelchemy validate ./audio --transcripts ./texts   # mfa validate
@@ -63,6 +64,63 @@ def _cmd_app(args: argparse.Namespace) -> int:
     if args.reload:
         cmd.append("--reload")
     return subprocess.call(cmd)
+
+
+def _tool_detail(status) -> str:
+    """One-line 'where and which version' for an external CLI tool."""
+    if not status.available:
+        return "not found"
+    version = status.version or ""
+    return f"{version} [{status.path}]" if version and version != status.path else str(status.path)
+
+
+def _cmd_doctor(args: argparse.Namespace) -> int:
+    """Report what is installed and where — the first thing to run when stuck."""
+    from . import alignment, extraction, phontrast, toolenv
+
+    info = toolenv.app_info()
+    print("Vowelchemy")
+    print(f"  version   : {info['version']}")
+    print(f"  code      : {info['location']}")
+    print(f"  python    : {info['python']} ({info['executable']})")
+    print(f"  UI bundle : {info['webui'] or 'NOT BUILT (API only) — run: vowelchemy setup'}")
+
+    selected = toolenv.selected_prefix()
+    print(f"\nTool environment: {selected or 'none selected (using PATH)'}")
+    pj = phontrast.phontrast_status()
+    rows = [("MFA", alignment.mfa_status().available, _tool_detail(alignment.mfa_status())),
+            ("new-fave", extraction.newfave_status().available,
+             _tool_detail(extraction.newfave_status())),
+            ("phontrast (R)", pj.available,
+             f"{pj.package} {pj.version}" if pj.available else "not found (built-in JSD used)")]
+    for label, available, detail in rows:
+        print(f"  {'OK ' if available else '-- '}{label:14s}: {detail}")
+
+    envs = toolenv.discover_environments()
+    if envs:
+        print("\nEnvironments containing the tools:")
+        for env in envs:
+            print(f"  {env.name:20s} {'+'.join(sorted(env.tools)):16s} {env.path}")
+        print("\nSelect one with:  vowelchemy doctor --use-env <path>")
+    else:
+        print("\nNo conda/mamba environment with MFA or new-fave was found.")
+        print(toolenv.MFA_CONDA_HINT)
+    return 0
+
+
+def _cmd_use_env(args: argparse.Namespace) -> int:
+    from . import toolenv
+
+    try:
+        tools = toolenv.set_selected_prefix(args.use_env)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    if args.use_env:
+        print(f"Using {args.use_env} for: {', '.join(sorted(tools))}")
+    else:
+        print("Cleared the tool environment; falling back to PATH.")
+    return 0
 
 
 def _cmd_demo(args: argparse.Namespace) -> int:
@@ -244,6 +302,12 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--no-browser", action="store_true", dest="no_browser",
                    help="don't open the app in a browser once the server is up")
     a.set_defaults(func=_cmd_app)
+
+    doc = sub.add_parser("doctor", help="show what's installed, where, and which tools are found")
+    doc.add_argument("--use-env", default=None, metavar="PATH",
+                     help="use this conda/mamba environment for MFA/new-fave "
+                          "(pass '' to clear)")
+    doc.set_defaults(func=lambda a: _cmd_use_env(a) if a.use_env is not None else _cmd_doctor(a))
 
     setup = sub.add_parser("setup", help="build the React UI (needs Node)")
     setup.add_argument("--force", action="store_true", help="rebuild even if dist/ exists")
