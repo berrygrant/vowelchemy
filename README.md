@@ -463,4 +463,12 @@ Vowelchemy orchestrates and builds on these tools — cite them when you use it:
   Vowel Extraction)* (Version 2.0.0) [Computer software]. Zenodo.
   https://doi.org/10.5281/zenodo.22281
 
+## AI disclosure
+
+Substantial parts of this repository — implementation, tests, and
+documentation — were written with **[Claude Code](https://claude.com/claude-code)**
+(Anthropic's agentic coding tool) working under the author's direction. The
+research design, methodological choices, and the decision to release rest with
+the author, who is responsible for the contents of this repository.
+
 Vowelchemy is released under the MIT License (see `LICENSE`).
