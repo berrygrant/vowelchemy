@@ -2,12 +2,11 @@
 
 **Turn conversational speech corpora into normalized, analyzable vowel data — in one app.**
 
-Vowelchemy is a lab-friendly tool for students and researchers doing
-sociophonetic vowel analysis. Point it at a corpus of recordings and
-transcripts and it walks you through the whole pipeline: force-alignment,
-formant extraction, normalization, filtering, interactive visualization, and
-category-separation metrics — with sensible defaults at every step and a demo
-mode so you can learn the workflow before touching real data.
+Vowelchemy is a lab-friendly tool for sociophonetic vowel analysis. Point it at
+your recordings and transcripts and it walks you through the whole pipeline:
+force-alignment, formant extraction, normalization, filtering, interactive
+plots, and category-separation metrics — with sensible defaults at every step,
+and a demo dataset so you can learn the workflow before touching real data.
 
 ```mermaid
 flowchart LR
@@ -20,205 +19,58 @@ flowchart LR
     E --> H[Separation metrics<br/>phontrast / built-in JSD]
 ```
 
-Each stage **detects whether its work is already done** — if your TextGrids are
-already aligned, or you already have an extracted-vowel CSV, Vowelchemy lets you
-skip straight ahead.
+Every stage checks whether its work is already done — if your TextGrids are
+aligned, or you already have an extracted-vowel CSV, you can skip straight
+ahead.
 
 ---
 
-## Install
+## Get started
 
-### The no-terminal way (for students)
+### Without a terminal
 
-Two options that never open a command line:
+- **Download the app.** Get `Vowelchemy-macOS.zip` or `Vowelchemy-Windows.zip`
+  from the [Releases page](https://github.com/berrygrant/vowelchemy/releases),
+  unzip, and double-click. Your browser opens with Vowelchemy running; no
+  Python needed.
+- **Or use the launcher.** Choose **Code ▸ Download ZIP** above, unzip, and
+  double-click **`Start Vowelchemy (Mac).command`** or
+  **`Start Vowelchemy (Windows).bat`**. The first run sets everything up inside
+  the folder (a few minutes, and it needs
+  [Python 3](https://www.python.org/downloads/)); later runs start right away.
 
-- **The desktop app.** Download `Vowelchemy-macOS.zip` or
-  `Vowelchemy-Windows.zip` from the
-  [Releases page](https://github.com/berrygrant/vowelchemy/releases), unzip,
-  and double-click the app. Your browser opens with Vowelchemy running —
-  Python not required. (Maintainers: the Actions workflow **Build desktop
-  app** produces these; run it manually or push a `v*` tag.)
-- **The one-click launcher.** Use **Code ▸ Download ZIP** on this page,
-  unzip, and double-click **`Start Vowelchemy (Mac).command`** or
-  **`Start Vowelchemy (Windows).bat`**. The first run installs everything
-  into a private environment inside the folder (a few minutes; needs
-  [Python 3](https://www.python.org/downloads/) installed); every later run
-  starts straight away.
+On first open, macOS may say the app is from an unidentified developer —
+right-click the file and choose **Open**. On Windows, click **More info ▸ Run
+anyway**.
 
-First-open warnings are normal for unsigned downloads: on macOS,
-**right-click the file → Open** the first time; on Windows SmartScreen,
-**More info → Run anyway**.
-
-Both cover the *analysis* half of the pipeline (demo mode, loading extracted
-CSVs, normalization, plots, separation metrics). Aligning and extracting from
-raw audio still needs MFA / new-fave on your PATH (below) — many students
-never need them, because the lab provides pre-extracted CSVs.
-
-### 1. The app (Python/FastAPI backend + React front-end)
-
-Vowelchemy is a **FastAPI** backend that exposes the analysis library, plus a
-**React** (Vite + TypeScript) front-end that renders server-produced Plotly
-charts. Install the backend, build the UI once, then launch:
+### With Python
 
 ```bash
 git clone https://github.com/berrygrant/vowelchemy
 cd vowelchemy
 python3 -m venv .venv          # private environment for Vowelchemy
 source .venv/bin/activate      # Windows: .venv\Scripts\activate
-pip install .                  # backend (pandas, scipy, plotly, fastapi) + the prebuilt UI
-vowelchemy app                 # serves API + UI at http://127.0.0.1:8000 and opens your browser
+pip install .
+vowelchemy app                 # serves the app and opens your browser
 ```
 
-> **Don't skip the venv lines.** A bare `pip install .` fails on modern
-> Python setups (Homebrew, current Linux distros) with an
-> `externally-managed-environment` error, and a system-wide `pip` often
-> belongs to a different Python than the one that would run `vowelchemy`.
-> The virtual environment sidesteps both. Re-run `source .venv/bin/activate`
-> in every new terminal — or skip all of this with the double-click
-> launchers above, which create and reuse their own environment
-> (`.venv-app/`) automatically.
+Keep the virtual environment: without it, `pip install .` fails on many modern
+systems with an `externally-managed-environment` error. Re-run the `activate`
+line in each new terminal. (`vowelchemy app --port 8080` changes the port;
+`--no-browser` skips the auto-open.)
 
-(`--no-browser` suppresses the auto-open; `--port` changes the port.)
+### Try it with no corpus at all
 
-The backend pulls in only lightweight scientific-Python packages plus FastAPI.
-You can explore the entire analysis, visualization, and separation-metrics
-workflow immediately using **Demo mode** (a button in the sidebar) — no corpus,
-aligner, or R required.
-
-> **No Node needed.** The built UI is committed inside the package
-> (`src/vowelchemy/webui/`) and ships in the wheel, so `pip install .` then
-> `vowelchemy app` serves it from any directory. After changing frontend
-> source, rebuild with `vowelchemy setup` (needs Node ≥ 18).
->
-> **Deploying to a lab server?** A Dockerfile ships for that:
->
-> ```bash
-> cd vowelchemy                # the repo root — the folder containing `Dockerfile`
-> docker build -t vowelchemy .
-> docker run -p 8000:8000 -v /path/to/corpora:/data vowelchemy
-> ```
->
-> (`docker build` looks for `Dockerfile` in the directory you pass — `.` —
-> so "no such file or directory" means you're not in the repo root; either
-> `cd` there or pass the path: `docker build -t vowelchemy /path/to/vowelchemy`.
-> If `ls` shows `api.py` and `cli.py`, you're inside the package folder
-> (`src/vowelchemy/`) — go up to the repo root.)
->
-> This needs Docker installed *and its daemon running* (on macOS/Windows
-> that means Docker Desktop is open), plus network access to Docker Hub for
-> the base images. It's the right tool for a shared lab machine, not a
-> student laptop — students should use the launchers or desktop app above.
->
-> **Developing the UI?** Run the backend with `vowelchemy app` and, in another
-> terminal, `cd frontend && npm run dev` for a hot-reloading dev server at
-> `http://localhost:5173` that proxies `/api` to the backend.
-
-### Advanced / researcher features
-
-Save & reload a **reproducible recipe** (config as JSON) and **named projects**
-(sidebar); **bootstrap JSD confidence intervals** and a **Pillai permutation
-p-value**; **outlier removal**; **formant-trajectory** plots for diphthongs
-(Visualize → Trajectories); **density/contour** vowel-space modes and token
-thinning for large corpora; **PNG/SVG export**; configurable normalization
-parameters and **custom (IPA/non-English) vowel-label maps**; an in-app
-**glossary**. The folder browser can be confined with
-`VOWELCHEMY_BROWSE_ROOT=/data` when the server isn't purely local.
-
-### 2. The aligner and extractor (acquisition half)
-
-Force-alignment and formant extraction are heavy, specialized tools that live
-in their own environments. Vowelchemy *orchestrates* them — it does not bundle
-them. **Stages 1 and 4–6 don't need either tool**, so a student handed an
-extracted vowel CSV can skip this section entirely.
-
-The app can set both up for you: click **🔧 Set up tools** in the sidebar. It
-finds conda/mamba environments that already contain the tools, lets you pick
-one (Vowelchemy then runs them straight from there — *no activation needed*),
-and installs new-fave on request.
-
-**Montreal Forced Aligner** (for `2 · Align`) — **conda/mamba only**:
-
-```bash
-mamba create -n aligner -c conda-forge montreal-forced-aligner   # or: conda create …
-mamba activate aligner
-mfa model download acoustic english_us_arpa
-mfa model download dictionary english_us_arpa
-```
-
-> `pip install montreal-forced-aligner` **appears to work and then fails** at
-> run time with `No module named '_kalpy'` — MFA's Kaldi bindings are published
-> on conda-forge, not PyPI. That's why the aligner can't ride along in the
-> app's own environment, and why "Set up tools" borrows it instead.
-
-**new-fave** (for `3 · Extract`) — a normal pip package (Python ≥ 3.10):
-
-```bash
-pip install new-fave                  # provides the `fave-extract` command
-pip install "vowelchemy[extract]"     # or install it alongside Vowelchemy
-```
-
-The sidebar shows 🟢 when each tool is detected — in the environment you
-picked, in Vowelchemy's own environment, or on your `PATH`. To point at an
-environment without opening the app (lab machines, containers), set
-`VOWELCHEMY_TOOL_ENV=/path/to/env` or run `vowelchemy doctor --use-env <path>`.
-
-**Stuck?** `vowelchemy doctor` prints which Vowelchemy is running, from where,
-which tools it can see, and every environment it found:
-
-```
-$ vowelchemy doctor
-Vowelchemy
-  version   : 0.1.0
-  code      : /Users/you/vowelchemy/src/vowelchemy
-  python    : 3.11.15 (/Users/you/vowelchemy/.venv-app/bin/python3)
-  UI bundle : /Users/you/vowelchemy/src/vowelchemy/webui
-
-Tool environment: /Users/you/miniforge3/envs/aligner
-  OK MFA           : 3.4.2 [/Users/you/miniforge3/envs/aligner/bin/mfa]
-  -- new-fave      : not found
-```
-
-(That first block is also the answer when a fix you pulled doesn't seem to be
-there — if `code:` points somewhere unexpected, you're running an older
-installed copy; re-install from your checkout.)
-
-### 3. phontrast (optional — canonical separation metrics)
-
-Vowelchemy has a built-in Python implementation of JSD-based separation, so
-`6 · Separation` works out of the box. To use the **canonical** engine — the
-[phontrast](https://github.com/berrygrant/phontrast) R package (formerly
-*phonJSD*; legacy installs still work) — install R (≥ 4.1) and:
-
-```r
-install.packages("remotes")
-remotes::install_github("berrygrant/phontrast")
-```
-
-Make sure `Rscript` is on your `PATH`. Vowelchemy will then offer phontrast as
-an engine in the separation stage and call `compare_overlap_metrics()` directly.
-
----
-
-## Quickstart
-
-```bash
-vowelchemy app
-```
-
-Then click **✨ Load demo dataset** in the sidebar. This loads a synthetic
-18-speaker corpus that contains a deliberately planted **age-graded low-back
-merger** (LOT ~ THOUGHT overlap increases across apparent time) and a stable,
-well-separated **BET vs BEET** contrast — so the plots and metrics have
-something real to show.
-
-Jump to **5 · Visualize** to build *BET/BEET F1 by Age Group*, or **6 ·
-Separation** to watch the LOT~THOUGHT JSD fall from ~0.96 (older) to ~0.10
-(younger).
+Click **✨ Load demo dataset** in the sidebar. It loads a synthetic 18-speaker
+corpus with a planted **age-graded low-back merger** (LOT ~ THOUGHT overlap
+grows across apparent time) and a stable **BET vs BEET** contrast, so every
+plot and metric has something real to show. Jump to **5 · Visualize** for
+*BET/BEET F1 by Age Group*, or **6 · Separation** to watch the LOT~THOUGHT JSD
+fall from ~0.96 (older) to ~0.10 (younger).
 
 **New to research?** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) is a guided
-walkthrough for undergraduate researchers — a demo warm-up, then a complete
-real-corpus study (question → hypothesis → analysis → interpretation →
-write-up), using the lab's PREP corpus as the worked example.
+walkthrough for undergraduates: a demo warm-up, then a complete real-corpus
+study from question to write-up.
 
 ---
 
@@ -226,102 +78,129 @@ write-up), using the lab's PREP corpus as the worked example.
 
 | Stage | What it does |
 |-------|--------------|
-| **1 · Corpus** | Give a single **root folder** and let Vowelchemy **auto-detect** the audio / transcript / aligned sub-folders (fuzzy, content-based), or set each path yourself with a **click-to-browse folder picker**. Folders can be the **same, separate, or per-speaker sub-folders**, and may be on a **mounted remote filesystem**. It pairs files by name, detects which recordings are already force-aligned, and finds existing vowel CSVs. |
-| **2 · Align** | If recordings lack a phone tier, force-align them with MFA. Vowelchemy stages the corpus (even across separate folders), downloads models, and runs `mfa align` on a background job with a **live progress bar** (phase + percent). |
-| **3 · Extract** | Measure vowel formants with new-fave's `fave-extract` (`corpus` / `subcorpora` mode) — again on a background job with a **live progress bar** — or load/upload an existing measurement CSV. Raw Hz formants are kept so you can re-normalize freely. |
-| **4 · Dataset** | Auto-detect the column schema (override if needed), join speaker demographics, pick a normalization method, select vowels, filter/group by any sociodemographic column, preview, and **download the tidy dataset as CSV**. |
-| **5 · Visualize** | Build interactive, **distribution-revealing** plots (see below). |
-| **6 · Separation** | Compute JSD / Pillai / Bhattacharyya separation between vowel categories, optionally within each level of a factor (e.g. Age Group). Uses the phontrast R package when available, the built-in engine otherwise. |
+| **1 · Corpus** | Give one **root folder** and let Vowelchemy find the audio, transcript, and aligned sub-folders, or set each path yourself with the folder picker. Folders can be the same, separate, or per-speaker, and may live on a mounted remote drive. It pairs files by name, spots which recordings are already aligned, and finds existing vowel CSVs. |
+| **2 · Align** | Force-align recordings with MFA. Vowelchemy stages the corpus, downloads models, and runs the alignment as a background job with a live progress bar. |
+| **3 · Extract** | Measure formants with new-fave — again as a background job — or load an existing measurement CSV. Raw Hz are kept so you can re-normalize freely. |
+| **4 · Dataset** | Detect the column schema, join speaker demographics, choose a normalization method, select vowels, filter by any demographic column, preview, and download the tidy dataset as CSV. |
+| **5 · Visualize** | Build interactive, distribution-revealing plots (below). |
+| **6 · Separation** | Measure how distinct two vowels are — overall or within each level of a factor such as Age Group. |
+
+Beyond the basics: reproducible **recipes** and named **projects**, bootstrap
+**confidence intervals** and a **permutation p-value**, outlier removal,
+**formant trajectories** for diphthongs, density/contour vowel spaces, PNG/SVG
+export, custom (IPA or non-English) vowel labels, and an in-app glossary.
 
 ---
 
-## Normalization methods
+## Normalization
 
-Normalization is applied **post-hoc and transparently** — raw formants are
-extracted once, and switching methods re-normalizes instantly (great for
-teaching the difference). The default is **Lobanov**, the ANAE standard.
+Normalization happens **after** measurement, so switching methods re-normalizes
+instantly — useful for teaching the difference. The default is **Lobanov**, the
+ANAE standard.
 
 | Method | Key | What it does | Units |
 |--------|-----|--------------|-------|
 | **Lobanov** (default) | `lobanov` | Per-speaker z-score of each formant `(F − mean)/sd` | z-score |
-| **Labov ANAE** | `labov_anae` | Log-mean scaling to a shared grand mean *G* (Telsur 6.896874); a uniform per-speaker rescaling | scaled Hz |
+| **Labov ANAE** | `labov_anae` | Log-mean scaling to a shared grand mean *G* (Telsur 6.896874) | scaled Hz |
 | **Nearey (shared)** | `nearey` | Subtract one per-speaker log-mean from every formant | log-Hz |
 | **Nearey1** | `nearey1` | Subtract a per-speaker, per-formant log-mean | log-Hz |
 | **Bark** | `bark` | Traunmüller Hz→Bark transform (psychoacoustic) | Bark |
-| **Watt–Fabricius** | `watt_fabricius` | Divide by a per-speaker S-centroid from corner vowels (FLEECE/TRAP) | ratio |
+| **Watt–Fabricius** | `watt_fabricius` | Divide by a per-speaker S-centroid from corner vowels | ratio |
 | **None** | `none` | Raw Hz | Hz |
 
-References: Lobanov (1971); Labov, Ash & Boberg (2006, *ANAE*); Nearey (1978);
-Watt & Fabricius (2002); Fabricius, Watt & Johnson (2009); Traunmüller (1990).
+Lobanov (1971); Labov, Ash & Boberg (2006, *ANAE*); Nearey (1978); Watt &
+Fabricius (2002); Fabricius, Watt & Johnson (2009); Traunmüller (1990).
 
----
+## Plots
 
-## Visualizations
+The house style favors forms that show the **distribution**, not just the mean:
 
-The house style favors forms that reveal the **distribution**, not just the mean:
-
-- **Vowel space** — the canonical F2×F1 plot with 2-SD confidence ellipses and
-  direct centroid labels.
-- **Cross builder** — grouped **violins with an inner box and raw jittered
-  tokens** (e.g. *BET/BEET F1 by Age Group*); also box and strip styles.
+- **Vowel space** — F2×F1 with 2-SD confidence ellipses and centroid labels.
+- **Cross builder** — violins with an inner box and raw jittered tokens (e.g.
+  *BET/BEET F1 by Age Group*); box and strip styles too.
 - **Ridgeline** — stacked density curves across a factor's levels, exposing
   modality and shift.
-- **Separation charts** — a metric-by-group bar (merger trajectories) and a
+- **Separation charts** — a metric-by-group bar for merger trajectories, and a
   vowel×vowel heatmap.
 
-Colors come from a validated colorblind-safe categorical palette.
+Colors come from a colorblind-safe palette.
+
+## Separation metrics
+
+The **Jensen–Shannon Divergence (JSD)** between two vowels' distributions in
+normalized formant space says how distinguishable they are: **1** fully
+separated, **0** indistinguishable. Vowelchemy reports it alongside **Pillai's
+trace** and **Bhattacharyya overlap** so you can triangulate, and can compute
+all three within each level of a factor to reveal mergers in apparent time.
+
+Two engines produce these numbers. The built-in Python engine (KDE-based,
+base-2 JSD in `[0, 1]`) needs nothing extra, so the stage always works. If R
+and [phontrast](https://github.com/berrygrant/phontrast) are installed,
+Vowelchemy calls `compare_overlap_metrics()` and returns its fuller table
+(adding Mahalanobis distance and percent overlap):
+
+```r
+install.packages("remotes")
+remotes::install_github("berrygrant/phontrast")
+```
 
 ---
 
-## Separation metrics & phontrast
+## Aligning and measuring your own audio
 
-The **Jensen-Shannon Divergence (JSD)** between two vowels' distributions in
-(normalized) formant space measures how distinguishable they are:
+Stages 1 and 4–6 work without any extra software, so if someone hands you an
+extracted vowel CSV you can skip this section. Aligning and measuring raw audio
+needs two outside programs, and the app can set both up: click **🔧 Set up
+tools** in the sidebar. It finds conda/mamba environments that already contain
+them, and running one from there needs no activation.
 
-- **1** — fully separated,
-- **0** — indistinguishable (merged).
+**Montreal Forced Aligner** (stage 2) installs through conda/mamba only:
 
-Vowelchemy reports JSD alongside **Pillai's trace** and **Bhattacharyya
-overlap** for triangulation, and can compute all of them **within each level of
-a factor** (e.g. per Age Group) to reveal mergers in apparent time.
+```bash
+mamba create -n aligner -c conda-forge montreal-forced-aligner
+mamba activate aligner
+mfa model download acoustic english_us_arpa
+mfa model download dictionary english_us_arpa
+```
 
-Two engines:
+`pip install montreal-forced-aligner` looks like it works and then fails at run
+time — MFA's Kaldi bindings are published on conda-forge, not PyPI.
 
-- **phontrast (R)** — your lab's canonical package. When R + phontrast (or a
-  legacy phonJSD install) are present, Vowelchemy calls
-  `compare_overlap_metrics(data, features, category_col, group_col)` and returns
-  its full table (JSD, Pillai, Bhattacharyya, Mahalanobis, percent overlap, CIs).
-- **Built-in (Python)** — a methodologically aligned KDE-based implementation
-  (base-2 JSD in `[0, 1]`) that needs no R, so the app always works.
+**new-fave** (stage 3) is an ordinary pip package needing Python 3.10+, and the
+Set up tools panel can install it for you:
+
+```bash
+pip install new-fave                # or: pip install "vowelchemy[extract]"
+```
+
+The sidebar shows 🟢 for each tool it finds — in the environment you picked, in
+Vowelchemy's own environment, or on your `PATH`. On a lab machine you can set
+the environment without opening the app, with `VOWELCHEMY_TOOL_ENV=/path/to/env`
+or `vowelchemy doctor --use-env /path/to/env`.
 
 ---
 
 ## Command line
 
 ```bash
-vowelchemy app                                    # launch the app
-vowelchemy doctor                                  # what's installed, where, which tools
-vowelchemy doctor --use-env ~/miniforge3/envs/aligner   # borrow MFA from a conda env
-vowelchemy setup                                   # build the UI (needs Node)
+vowelchemy app                                     # launch the app
+vowelchemy doctor                                  # what's installed, and where
 vowelchemy demo ./demo                             # write a synthetic dataset
 vowelchemy discover ./audio --transcripts ./texts  # scan a corpus
-vowelchemy align ./audio --transcripts ./texts -o ./aligned    # MFA (scripted)
-vowelchemy extract ./audio --aligned ./aligned -o ./vowels     # new-fave (scripted)
+vowelchemy align ./audio --transcripts ./texts -o ./aligned
+vowelchemy extract ./audio --aligned ./aligned -o ./vowels
 vowelchemy normalize vowels.csv -m lobanov -s speakers.csv -o out.csv
 vowelchemy separation vowels.csv --vowels BEET,BET,LOT,THOUGHT --group-by "Age Group" -s speakers.csv
 ```
 
-The full pipeline is scriptable headlessly with `align` + `extract`, so many
-corpora can be batch-processed without the UI.
-
-Vowels can be given as ARPABET (`IY`), Wells lexical sets (`FLEECE`), or
-keywords (`BEET`) — all resolve to the same category.
-
----
+`align` and `extract` make the pipeline scriptable, so many corpora can be
+batch-processed without the UI. Vowels can be named as ARPABET (`IY`), Wells
+lexical sets (`FLEECE`), or keywords (`BEET`) — all resolve to the same
+category.
 
 ## Python API
 
-Everything the app does is available as a library (no web server required):
+Everything the app does is available as a library:
 
 ```python
 from vowelchemy import analysis, normalization, metrics
@@ -338,85 +217,72 @@ sep = metrics.pairwise_separation(df, schema,
 print(sep[["group_value", "vowel_a", "vowel_b", "JSD", "Pillai"]])
 ```
 
-## Bring your own vowel data
+## Bringing your own vowel data
 
-Vowelchemy doesn't hard-code any one tool's column names. `ColumnSchema.detect`
-recognizes common spellings from **new-fave**, legacy **FAVE-extract**, the
-**NORM** suite, and hand-made CSVs (`speaker`/`name`, `vowel`/`label`/`plt_vclass`,
-`F1`/`F1_50`, …). Anything it can't guess, you map with one click in the app or
-by passing overrides to `ColumnSchema.detect(df, {...})`.
+Vowelchemy doesn't assume one tool's column names. `ColumnSchema.detect`
+recognizes the usual spellings from **new-fave**, legacy **FAVE-extract**, the
+**NORM** suite, and hand-made CSVs (`speaker`/`name`,
+`vowel`/`label`/`plt_vclass`, `F1`/`F1_50`, …). Anything it can't guess you map
+with one click in the app.
 
-## Remote / mounted corpora
-
-A remotely stored corpus (SSHFS, SMB, NFS) simply appears as a normal path once
-mounted — give Vowelchemy that mounted path. It validates existence and
-readability without assuming local disk. Alignment/extraction read a lot of
-audio, so a fast mount (or staging locally) is recommended for large corpora.
+A corpus on a mounted remote drive (SSHFS, SMB, NFS) is just a normal path —
+give Vowelchemy the mounted path. Alignment and extraction read a lot of audio,
+so a fast mount, or staging locally first, helps with large corpora.
 
 ---
 
-## Architecture & project layout
+## Troubleshooting
 
-Vowelchemy is a **Python library** wrapped by a **FastAPI** backend, driven by a
-**React** front-end. The library holds all the real logic (and is fully usable on
-its own); the backend is thin glue that also produces the Plotly charts as JSON;
-React renders them with plotly.js and never re-implements chart logic.
+**Start with `vowelchemy doctor`.** It reports which copy of Vowelchemy is
+running, from where, and which tools it can see:
 
 ```
-Start Vowelchemy (Mac).command    # double-click launcher (self-installing)
-Start Vowelchemy (Windows).bat    # double-click launcher (self-installing)
-assets/icon.svg       # app artwork (build_icons.py regenerates every format)
-packaging/desktop/    # PyInstaller desktop app (entry, spec, icons; built by CI)
-src/vowelchemy/       # Python library + API (pip installable; src layout, so
-                      # the repo root has no folder with the package's name)
-  api.py              # FastAPI backend — exposes the library over JSON
-  cli.py              # command-line entry point (`vowelchemy …`)
-  corpus.py           # discovery, pairing, alignment detection, autodetect + browse
-  alignment.py        # MFA orchestration + corpus staging
-  extraction.py       # new-fave orchestration
-  jobs.py             # background jobs + progress parsing (align/extract)
-  normalization.py    # Lobanov, Labov-ANAE, Nearey, Bark, Watt–Fabricius, …
-  schema.py           # column auto-detection
-  analysis.py         # loaders, join / select / filter / group / outliers
-  metrics.py          # built-in JSD (+ bootstrap CIs), Pillai (+ permutation p), Bhattacharyya
-  trajectories.py     # formant-track (diphthong) trajectories
-  phontrast.py        # bridge to the phontrast R package (formerly phonJSD)
-  projects.py         # persistent named projects (~/.vowelchemy/projects)
-  glossary.py         # in-app glossary, key readings, metric verdicts
-  runners.py          # shared subprocess / tool-detection helpers
-  toolenv.py          # find MFA/new-fave in conda envs; remember the choice
-  visualization.py    # Plotly figures (distribution-first)
-  sample_data.py      # synthetic demo corpus (points + trajectory tracks)
-  constants.py        # vowel identifiers (ARPABET ↔ lexical set ↔ keyword)
-  webui/              # committed production build of the React UI (ships in the wheel)
-frontend/             # React + Vite + TypeScript single-page app (source)
-  src/App.tsx         # shell + stage routing
-  src/stages/*.tsx    # the six pipeline stages
-  src/components/*    # sidebar, PlotlyChart, DataTable, form controls
-  src/hooks/*         # useJob (progress + reconnect), useBusy
-  src/api.ts          # typed fetch client (session-aware)
-  src/lib.ts          # shared utils (downloads, CSV, grouping columns)
-examples/             # ready-to-use demo CSVs
-docs/TUTORIAL.md      # guided first study for undergrads (demo warm-up + PREP corpus)
-docs/REFERENCES.md    # the methods literature, with a feature → citation map
-docs/FEATURE_AUDIT.md # detailed feature inventory & test-coverage map
-docs/QOL_AUDIT.md     # usability audit (student + researcher) & roadmap
-docs/UNDERGRAD_RESEARCH_PLAN.md  # improvement plan for student researchers
-CITATION.cff          # how to cite Vowelchemy itself
-tests/                # pytest suite (library + API)
+$ vowelchemy doctor
+Vowelchemy
+  version   : 0.2.1
+  code      : /Users/you/vowelchemy/src/vowelchemy
+  python    : 3.12.4 (/Users/you/vowelchemy/.venv-app/bin/python3)
+  UI bundle : /Users/you/vowelchemy/src/vowelchemy/webui
+
+Tool environment: /Users/you/miniforge3/envs/aligner
+  OK MFA           : 3.4.2 [/Users/you/miniforge3/envs/aligner/bin/mfa]
+  -- new-fave      : not found
 ```
 
-> **Local-tool security note.** The folder picker lets the UI browse the
-> *server's* filesystem (the machine running `vowelchemy app`) — intended for
-> local single-user use. When the server isn't purely local, confine browsing
-> and autodetect to one directory tree with `VOWELCHEMY_BROWSE_ROOT=/data`
-> (the Docker image sets this to `/data` by default).
+| Symptom | Fix |
+|---|---|
+| An update you installed doesn't seem to be there | Check `code:` in `vowelchemy doctor` — if it points somewhere unexpected, you're running an older installed copy. Re-install from your checkout. |
+| MFA or new-fave shows as not detected | Open **🔧 Set up tools** and pick the environment that has them, or install them as above. |
+| `externally-managed-environment` from pip | Create and activate a virtual environment first (see above), or use the double-click launcher. |
+| A run fails part-way through | The stage streams the tool's log — read the last lines. MFA and new-fave change their flags between releases; compare against `mfa align --help` or `fave-extract --help`. |
 
-## Development
+---
+
+## For developers
+
+Vowelchemy is a Python library wrapped by a **FastAPI** backend and driven by a
+**React** front-end. The library holds the real logic and is fully usable on its
+own; the backend is thin glue that also renders the Plotly charts as JSON, which
+React displays without re-implementing any chart logic.
+
+```
+src/vowelchemy/     Python library + API (pip installable)
+  api.py            FastAPI backend            corpus.py      discovery + pairing
+  cli.py            command line               alignment.py   MFA orchestration
+  analysis.py       load / join / filter       extraction.py  new-fave orchestration
+  normalization.py  Lobanov, ANAE, Bark, …     toolenv.py     find tools in conda envs
+  metrics.py        JSD, Pillai, Bhattacharyya phontrast.py   bridge to the R package
+  visualization.py  Plotly figures             jobs.py        background jobs
+  webui/            built UI, shipped in the wheel
+frontend/           React + Vite + TypeScript source
+packaging/desktop/  PyInstaller desktop app    assets/        app artwork
+docs/               tutorial, references, feature audit, roadmaps
+tests/              pytest suite (library + API)
+```
 
 ```bash
-python3 -m venv .venv && source .venv/bin/activate   # once per checkout
-pip install -e ".[dev]"      # backend + test deps
+python3 -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
 pytest                        # library + API tests
 
 cd frontend
@@ -425,29 +291,34 @@ npm run dev                   # hot-reloading UI at http://localhost:5173
 npm run build                 # production build → src/vowelchemy/webui (commit it)
 ```
 
-The Python tests cover the schema, normalization math (Lobanov, Labov-ANAE,
-Nearey, Bark, Watt–Fabricius), analysis, the built-in separation metrics, corpus
-discovery, the phontrast bridge, the extraction command builder, and every FastAPI
-endpoint (`fastapi.testclient`). The React app type-checks with `tsc` on each
-build.
+The built UI is committed inside the package, so `pip install .` serves it
+without Node. Rebuild it with `vowelchemy setup` (needs Node ≥ 18) after
+changing front-end source. Release builds of the desktop app come from the
+**Build desktop app** GitHub Actions workflow, which runs on a `v*` tag.
 
-> **Note on tool CLIs.** MFA and new-fave evolve their command-line flags
-> between releases. Vowelchemy targets current MFA 3.x and new-fave interfaces
-> and passes anything nonstandard through an `extra_args` escape hatch; if a run
-> fails, check the streamed log against `mfa align --help` / `fave-extract
-> --help` for your installed versions.
+To run on a shared lab machine, use the Dockerfile from the repository root:
+
+```bash
+docker build -t vowelchemy .
+docker run -p 8000:8000 -v /path/to/corpora:/data vowelchemy
+```
+
+> **Security note.** The folder picker browses the filesystem of the machine
+> running the server, which suits local single-user use. When the server isn't
+> purely local, confine browsing to one tree with
+> `VOWELCHEMY_BROWSE_ROOT=/data` (the Docker image does this by default).
+
+---
 
 ## References & citing
 
-The methods implemented here come from the sociophonetics and information-theory
-literature — **`docs/REFERENCES.md`** has the full reference list plus a
-feature → citation map for write-ups, and the in-app **Glossary** lists the key
-readings. To cite Vowelchemy itself, use **`CITATION.cff`** (GitHub's "Cite this
-repository" button).
+The methods come from the sociophonetics and information-theory literature:
+[`docs/REFERENCES.md`](docs/REFERENCES.md) has the full list plus a feature →
+citation map for write-ups, and the in-app **Glossary** lists the key readings.
+To cite Vowelchemy itself, use `CITATION.cff` (GitHub's "Cite this repository"
+button).
 
-## Credits
-
-Vowelchemy orchestrates and builds on these tools — cite them when you use it:
+Vowelchemy orchestrates and builds on these tools — please cite them too:
 
 - Berry, G. M. (2026). *phontrast: Contrast and separation metrics for
   phonological categories* (Version 2.4.0) [Computer software].

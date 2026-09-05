@@ -13,7 +13,7 @@ used from scripts, notebooks, and tests without the web stack.
 from pathlib import Path
 from typing import Optional
 
-__version__ = "0.2"
+__version__ = "0.2.1"
 
 
 def webui_dir() -> Optional[Path]:

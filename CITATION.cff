@@ -6,7 +6,7 @@ authors:
   - family-names: Berry
     given-names: Grant M.
     email: berry.grant@gmail.com
-version: 0.2
+version: 0.2.1
 date-released: 2026-09-04
 # doi: 10.5281/zenodo.XXXXXXX # add after archiving a release on Zenodo
 repository-code: "https://github.com/berrygrant/vowelchemy"
