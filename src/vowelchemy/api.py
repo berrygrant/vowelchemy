@@ -293,8 +293,13 @@ class SeparationRequest(BaseModel):
     group_by: Optional[str] = None
     dims: Optional[list[str]] = None
     engine: str = "builtin"  # "builtin" | "phontrast"
-    bootstrap: int = 0  # >0 → JSD confidence intervals
-    permutations: int = 0  # >0 → Pillai permutation p-value
+    density: str = "kde"  # phontrast `density`: "kde" | "mvnorm"
+    bw: str = "scott.diag"  # built-in: scott.diag | scott; R engine: Hpi | Hscv | Hpi.diag | scott.diag
+    min_tokens: int = metrics.MIN_TOKENS  # phontrast: minimum total tokens per pair
+    bootstrap: int = 0  # n_boot > 0 → bootstrap CIs for every metric
+    conf_level: float = 0.95
+    permutations: int = 0  # >0 → Pillai permutation p-value (built-in engine)
+    plot_metric: str = "jsd"  # which column the charts show
     dark: bool = False
 
 
@@ -791,39 +796,57 @@ def figure_ridgeline(req: FigureRidgeRequest, x_vowelchemy_session: Optional[str
 # --------------------------------------------------------------------------- #
 # Separation
 # --------------------------------------------------------------------------- #
+# Columns shown in the app's results table (the CSV download has everything).
+_SEPARATION_SHOW = [
+    "group_value", "vowel_a_label", "vowel_b_label", "n_a", "n_b",
+    "jsd", "jsd_ci_lower", "jsd_ci_upper", "js_distance",
+    "pillai", "pillai_eq", "pillai_p_value", "pillai_perm_p", "pillai_null_p95",
+    "bhatt_affinity", "percent_overlap", "mahalanobis_dist", "verdict",
+]
+
+
 @app.post("/api/separation")
 def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     df, schema, _ = _require_explore(session_for(x_vowelchemy_session))
-    sep = metrics.pairwise_separation(df, schema, vowels=req.vowels or None,
-                                      group_by=req.group_by, dimensions=req.dims,
-                                      bootstrap=req.bootstrap, permutations=req.permutations)
-    out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None, "phontrast": None}
+    density = req.density if req.density in metrics.DENSITIES else "kde"
+    bw = req.bw if req.bw in metrics.BANDWIDTHS else "scott.diag"
+    plot_metric = req.plot_metric if req.plot_metric in metrics.METRIC_COLUMNS else "jsd"
+    sep = metrics.pairwise_separation(
+        df, schema, vowels=req.vowels or None, group_by=req.group_by, dimensions=req.dims,
+        density=density, bw=bw, min_tokens=max(4, int(req.min_tokens)),
+        bootstrap=max(0, int(req.bootstrap)), conf_level=req.conf_level,
+        permutations=max(0, int(req.permutations)),
+    )
+    out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None,
+                 "phontrast": None, "plot_metric": plot_metric}
     if not sep.empty:
         sep = sep.copy()
-        sep["verdict"] = sep["JSD"].map(jsd_verdict)
-        show = [c for c in ["group_value", "vowel_a_label", "vowel_b_label", "n_a", "n_b",
-                            "JSD", "JSD_lo", "JSD_hi", "Pillai", "Pillai_p",
-                            "Bhattacharyya_overlap", "verdict"]
-                if c in sep.columns and sep[c].notna().any()]
+        sep["verdict"] = sep["jsd"].map(jsd_verdict)
+        show = [c for c in _SEPARATION_SHOW if c in sep.columns and sep[c].notna().any()]
         out["builtin"] = df_payload(sep[show], limit=1000)
         order = natural_order(df, req.group_by)
-        out["figure_bar"] = fig_json(viz.separation_bar(sep, group_order=order, dark=req.dark))
+        out["figure_bar"] = fig_json(viz.separation_bar(sep, metric=plot_metric,
+                                                        group_order=order, dark=req.dark))
         if req.group_by and sep["group_value"].notna().any():
             lvl = (order or sorted(sep["group_value"].dropna().unique()))[0]
-            out["figure_matrix"] = fig_json(viz.separation_matrix(sep, group_value=lvl, dark=req.dark))
+            out["figure_matrix"] = fig_json(viz.separation_matrix(
+                sep, metric=plot_metric, group_value=lvl, dark=req.dark))
         out["full_csv"] = sep.to_csv(index=False)
 
     if req.engine == "phontrast":
-        pj = phontrast.phontrast_status()
+        pj = phontrast.phontrast_status(wait=True)
         if not pj.available:
-            out["phontrast"] = {"error": "phontrast/R not available. " + phontrast.PHONTRAST_INSTALL_HINT}
+            out["phontrast"] = {"error": "phontrast/R not available. " + pj.install_hint}
         else:
             feats = req.dims or [c for c in ("F1_norm", "F2_norm") if c in df.columns]
             subset = analysis.select_vowels(df, schema, req.vowels) if req.vowels else df
             log: list[str] = []
-            res = phontrast.compare_overlap_metrics(subset, features=feats,
-                                                  category_col="vowel_canon",
-                                                  group_col=req.group_by, on_output=log.append)
+            res = phontrast.run_phontrast(
+                subset, features=feats, category_col="vowel_canon", group_col=req.group_by,
+                bw=req.bw if req.bw in phontrast.R_BANDWIDTHS else "Hpi", density=density,
+                min_tokens=max(4, int(req.min_tokens)), n_boot=max(0, int(req.bootstrap)),
+                conf_level=req.conf_level, on_output=log.append,
+            )
             out["phontrast"] = {
                 "ok": res.ok, "log": "\n".join(log), "notes": res.notes,
                 "table": df_payload(res.data, limit=1000) if res.data is not None else None,

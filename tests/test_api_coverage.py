@@ -108,7 +108,7 @@ def test_separation_csv_download(client):
     client.post("/api/dataset", json={"selected_vowels": ["AA", "AO"]}, headers=h)
     res = client.get("/api/separation/csv", headers=h)
     assert res.status_code == 200
-    assert b"JSD" in res.content
+    assert b"jsd" in res.content and b"js_distance" in res.content and b"pillai_eq" in res.content
 
 
 def test_vowelmap_upload(client):

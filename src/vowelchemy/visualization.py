@@ -358,7 +358,7 @@ def ridgeline(
 # --------------------------------------------------------------------------- #
 def separation_bar(
     sep_df: pd.DataFrame,
-    metric: str = "JSD",
+    metric: str = "jsd",
     dark: bool = False,
     group_order: Optional[Sequence[str]] = None,
     title: Optional[str] = None,
@@ -366,8 +366,12 @@ def separation_bar(
     """Grouped bars of a separation metric across group levels, one bar per pair.
 
     Ideal for showing a merger trajectory (e.g. LOT~THOUGHT JSD dropping across
-    Age Group).
+    Age Group).  ``metric`` is any column of :func:`metrics.pairwise_separation`
+    (``jsd``, ``js_distance``, ``pillai``, ``pillai_eq`` …); bootstrap columns
+    ``<metric>_ci_lower/_ci_upper`` become error bars when present.
     """
+    from .metrics import BOUNDED_METRICS, METRIC_LABELS
+
     plot_df = sep_df.copy()
     if "group_value" in plot_df.columns and plot_df["group_value"].notna().any():
         x = "group_value"
@@ -378,33 +382,39 @@ def separation_bar(
     cat_orders = {}
     if group_order and x == "group_value":
         cat_orders[x] = list(group_order)
-    hover = [c for c in ("n_a", "n_b", "Pillai", "Bhattacharyya_overlap") if c in plot_df.columns]
-    # Draw bootstrap CIs as error bars when present.
+    hover = [c for c in ("n_a", "n_b", "jsd", "js_distance", "pillai", "pillai_eq",
+                         "bhatt_affinity", "percent_overlap")
+             if c in plot_df.columns and c != metric]
     error_kw = {}
-    if metric == "JSD" and {"JSD_lo", "JSD_hi"}.issubset(plot_df.columns) and plot_df["JSD_hi"].notna().any():
+    lo, hi = f"{metric}_ci_lower", f"{metric}_ci_upper"
+    if {lo, hi}.issubset(plot_df.columns) and plot_df[hi].notna().any():
         plot_df = plot_df.assign(
-            _eplus=(plot_df["JSD_hi"] - plot_df[metric]).clip(lower=0),
-            _eminus=(plot_df[metric] - plot_df["JSD_lo"]).clip(lower=0),
+            _eplus=(plot_df[hi] - plot_df[metric]).clip(lower=0),
+            _eminus=(plot_df[metric] - plot_df[lo]).clip(lower=0),
         )
         error_kw = {"error_y": "_eplus", "error_y_minus": "_eminus"}
+    label = METRIC_LABELS.get(metric, metric)
     fig = px.bar(
         plot_df, x=x, y=metric, color="pair", barmode="group",
         category_orders=cat_orders, color_discrete_map=cmap, hover_data=hover, **error_kw,
     )
-    fig.update_layout(title=title or f"{metric} separation", legend_title_text="Vowel pair")
-    fig.update_yaxes(title=metric, range=[0, 1] if metric in ("JSD", "Pillai") else None)
+    fig.update_layout(title=title or f"{label} by {'group' if x == 'group_value' else 'vowel pair'}",
+                      legend_title_text="Vowel pair")
+    fig.update_yaxes(title=label, range=[0, 1] if metric in BOUNDED_METRICS else None)
     fig.update_xaxes(title=x.replace("group_value", "group"))
     return _apply_theme(fig, dark)
 
 
 def separation_matrix(
     sep_df: pd.DataFrame,
-    metric: str = "JSD",
+    metric: str = "jsd",
     group_value: Optional[object] = None,
     dark: bool = False,
     title: Optional[str] = None,
 ) -> go.Figure:
     """Vowel×vowel heatmap of a separation metric (one group level)."""
+    from .metrics import BOUNDED_METRICS, METRIC_LABELS
+
     plot_df = sep_df.copy()
     if group_value is not None and "group_value" in plot_df.columns:
         plot_df = plot_df[plot_df["group_value"] == group_value]
@@ -413,16 +423,17 @@ def separation_matrix(
     for _, r in plot_df.iterrows():
         mat.loc[r["vowel_a"], r["vowel_b"]] = r[metric]
         mat.loc[r["vowel_b"], r["vowel_a"]] = r[metric]
+    label = METRIC_LABELS.get(metric, metric)
     fig = go.Figure(
         go.Heatmap(
             z=mat.values, x=mat.columns, y=mat.index,
-            colorscale="Blues", zmin=0, zmax=1 if metric in ("JSD", "Pillai") else None,
-            colorbar=dict(title=metric),
-            hovertemplate="%{y} ~ %{x}<br>" + metric + ": %{z:.3f}<extra></extra>",
+            colorscale="Blues", zmin=0, zmax=1 if metric in BOUNDED_METRICS else None,
+            colorbar=dict(title=label),
+            hovertemplate="%{y} ~ %{x}<br>" + label + ": %{z:.3f}<extra></extra>",
         )
     )
     suffix = f" — {group_value}" if group_value is not None else ""
-    fig.update_layout(title=title or f"{metric} separation matrix{suffix}")
+    fig.update_layout(title=title or f"{label} matrix{suffix}")
     return _apply_theme(fig, dark, height=480)
 
 

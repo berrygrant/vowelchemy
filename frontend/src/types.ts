@@ -117,6 +117,7 @@ export interface SeparationResult {
   figure_bar: PlotlyFigure | null
   figure_matrix: PlotlyFigure | null
   full_csv?: string
+  plot_metric?: string
   phontrast: {
     ok?: boolean
     log?: string

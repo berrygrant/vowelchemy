@@ -1,30 +1,32 @@
-"""Bridge to the phontrast R package (formerly phonJSD).
+"""Bridge to the phontrast R package.
 
-`phontrast <https://github.com/berrygrant/phontrast>`_ (Berry, 2026) quantifies
-contrast/separation between phonological categories with information-theoretic
-measures — Jensen-Shannon Divergence via KDE (the ``ks`` package), plus Pillai,
-Bhattacharyya, and percent-overlap — in arbitrary n-dimensional acoustic
-spaces.  The package was renamed from *phonJSD* to *phontrast*; this bridge
-prefers ``phontrast`` and falls back to a legacy ``phonJSD`` install.
+`phontrast <https://github.com/berrygrant/phontrast>`_ (Berry, 2026; on CRAN
+since 2.3.1) quantifies contrast/separation between phonological categories:
+Jensen-Shannon divergence and distance via KDE (the ``ks`` package), the
+Pillai trace, Bhattacharyya distance/affinity, Mahalanobis distance and
+proportional overlap, in arbitrary n-dimensional acoustic spaces.  The package
+was renamed from *phonJSD* in 2.0.0, when ``compare_overlap_metrics()`` became
+``phontrast()``.
 
-When R and phontrast are installed, vowelchemy calls the package directly so
-the numbers match the lab's canonical method::
+When R and phontrast >= 2.3.1 are installed, vowelchemy drives the package
+directly so the numbers are the lab's canonical ones.  For every pair of vowel
+categories (phontrast compares exactly two) the generated script runs::
 
-    compare_overlap_metrics(
-        data         = <tokens>,
-        features     = c("F1_norm", "F2_norm"),
-        category_col = "vowel_canon",
-        group_col    = "Age Group",     # or NULL for the whole dataset
-        output       = "wide"
-    )
+    phontrast(data, features, category_col, group_col, min_tokens, bw,
+              density, mc_n, do_boot, n_boot, conf_level, output = "wide")
+    pillai_overlap(data, features, category_col, proportion_standardized = TRUE)
 
-When R is unavailable, :mod:`vowelchemy.metrics` provides a methodologically
-aligned native Python implementation (KDE-based JSD, Pillai, Bhattacharyya) so
-the app still works everywhere — see :func:`vowelchemy.metrics.pairwise_separation`.
+and binds the proportion-standardized Pillai fields (``pillai_eq`` …) onto
+phontrast's wide table, which ``phontrast()`` itself does not return.
+
+When R is unavailable, :mod:`vowelchemy.metrics` is a native port of the same
+estimators (same column names), so the app works everywhere — see
+:func:`vowelchemy.metrics.pairwise_separation`.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 import tempfile
 from dataclasses import dataclass, field
@@ -36,15 +38,25 @@ import pandas as pd
 from . import toolenv
 from .runners import CommandResult, run_streaming, which
 
+PHONTRAST_MIN_VERSION = (2, 3, 1)  # phontrast() + proportion-standardized Pillai
 PHONTRAST_INSTALL_HINT = (
-    "phontrast is an R (>= 4.1) package. Install R, then in R run:\n"
-    '  install.packages("remotes")\n'
-    '  remotes::install_github("berrygrant/phontrast")\n'
+    "phontrast is an R (>= 4.1) package on CRAN. Install R, then in R run:\n"
+    '  install.packages("phontrast")\n'
     "Ensure `Rscript` is on your PATH so vowelchemy can call it."
 )
+# Bandwidth selectors phontrast accepts (its default is the Hpi plug-in).
+R_BANDWIDTHS = ("Hpi", "Hscv", "Hpi.diag", "scott.diag")
+R_DENSITIES = ("kde", "mvnorm")
 
-# Package names to try, in order: current name first, then the pre-rename one.
+# Package names to probe, in order: current name first, then the pre-rename one
+# (reported so the hint can say "update", not "install").
 _R_PACKAGES = ("phontrast", "phonJSD")
+
+
+def _version_tuple(version: Optional[str]) -> tuple[int, ...]:
+    if not version:
+        return ()
+    return tuple(int(p) for p in re.findall(r"\d+", version)[:3])
 
 
 @dataclass
@@ -52,15 +64,29 @@ class PhontrastStatus:
     rscript_path: Optional[str]
     package: Optional[str] = None  # which R package name resolved
     version: Optional[str] = None
-    install_hint: str = PHONTRAST_INSTALL_HINT
 
     @property
     def package_installed(self) -> bool:
         return self.package is not None
 
     @property
+    def supported(self) -> bool:
+        """phontrast new enough to have ``phontrast()`` and ``pillai_eq``."""
+        return self.package == "phontrast" and _version_tuple(self.version) >= PHONTRAST_MIN_VERSION
+
+    @property
     def available(self) -> bool:
-        return bool(self.rscript_path) and self.package_installed
+        return bool(self.rscript_path) and self.supported
+
+    @property
+    def install_hint(self) -> str:
+        if self.package_installed and not self.supported:
+            found = f"{self.package} {self.version or ''}".strip()
+            need = ".".join(map(str, PHONTRAST_MIN_VERSION))
+            return (f"{found} is installed but Vowelchemy needs phontrast >= {need} "
+                    "(phontrast(), Jensen-Shannon distance, proportion-standardized Pillai). "
+                    'In R run: install.packages("phontrast")')
+        return PHONTRAST_INSTALL_HINT
 
 
 def phontrast_status(rscript: str = "Rscript", wait: bool = False) -> PhontrastStatus:
@@ -128,47 +154,157 @@ def _r_string_vector(names: Sequence[str]) -> str:
     return f"c({inner})"
 
 
+def _r_string(value: Optional[str]) -> str:
+    return "NULL" if value is None else '"' + str(value).replace('"', '\\"') + '"'
+
+
+_R_TEMPLATE = r"""#!/usr/bin/env Rscript
+# Generated by Vowelchemy: phontrast() + pillai_overlap(proportion_standardized = TRUE)
+# for every pair of vowel categories, optionally within each level of a group.
+args <- commandArgs(trailingOnly = TRUE)
+in_csv  <- args[1]
+out_csv <- args[2]
+suppressMessages(library(phontrast))
+if (utils::packageVersion("phontrast") < "@MIN_VERSION@") {
+  stop("Vowelchemy needs phontrast >= @MIN_VERSION@ (found ",
+       utils::packageVersion("phontrast"), "); run install.packages('phontrast').")
+}
+
+features     <- @FEATURES@
+category_col <- @CATEGORY@
+group_col    <- @GROUP@
+opts <- list(
+  min_tokens = @MIN_TOKENS@, bw = @BW@, density = @DENSITY@, mc_n = @MC_N@, eps = @EPS@,
+  do_boot = @DO_BOOT@, n_boot = @N_BOOT@, conf_level = @CONF_LEVEL@
+)
+
+d <- read.csv(in_csv, check.names = FALSE, stringsAsFactors = FALSE)
+d <- d[stats::complete.cases(d[, c(features, category_col), drop = FALSE]), , drop = FALSE]
+d[[category_col]] <- as.character(d[[category_col]])
+vowels <- sort(unique(d[[category_col]]))
+if (length(vowels) < 2) stop("Need at least two vowel categories after removing missing values.")
+pairs <- utils::combn(vowels, 2, simplify = FALSE)
+
+# Proportion-standardized Pillai (Berry 2026; Becker 1986; Lachenbruch & Mickey 1968)
+# plus Stanley & Sneller's (2023) e/m null reference, for one pair in one (sub)frame.
+standardized <- function(sub_i, pr) {
+  po <- tryCatch(
+    suppressWarnings(pillai_overlap(sub_i, features, category_col, proportion_standardized = TRUE)),
+    error = function(e) NULL
+  )
+  counts <- table(factor(sub_i[[category_col]], levels = pr))
+  pick <- function(name, default = NA_real_) {
+    if (is.null(po) || is.null(po[[name]])) default else po[[name]]
+  }
+  data.frame(
+    n_a = as.integer(counts[[1]]), n_b = as.integer(counts[[2]]),
+    pillai_eq = pick("pillai_eq"), pillai_eq_fallback = pick("pillai_eq_fallback", NA),
+    d2_plugin = pick("d2_plugin"), d2_unbiased = pick("d2_unbiased"),
+    d2_fallback = pick("d2_fallback"), bias_2p_over_H = pick("bias_2p_over_H"),
+    H = pick("H"), fragile_minority = pick("fragile_minority", NA),
+    pillai_null_p95 = min(1, exp(1) / (nrow(sub_i) / 2)),
+    stringsAsFactors = FALSE
+  )
+}
+
+rows <- list()
+for (pr in pairs) {
+  sub <- d[d[[category_col]] %in% pr, , drop = FALSE]
+  res <- tryCatch(
+    suppressWarnings(phontrast(
+      data = sub, features = features, category_col = category_col, group_col = group_col,
+      min_tokens = opts$min_tokens, bw = opts$bw, eps = opts$eps, output = "wide",
+      do_boot = opts$do_boot, n_boot = opts$n_boot, conf_level = opts$conf_level,
+      progress = FALSE, density = opts$density, mc_n = opts$mc_n
+    )),
+    error = function(e) {
+      message("phontrast(", pr[1], "~", pr[2], "): ", conditionMessage(e))
+      NULL
+    }
+  )
+  if (is.null(res) || !nrow(res)) next
+  res <- as.data.frame(res, stringsAsFactors = FALSE)
+  extra <- do.call(rbind, lapply(seq_len(nrow(res)), function(i) {
+    sub_i <- if (is.null(group_col)) sub else
+      sub[as.character(sub[[group_col]]) == as.character(res$group[i]), , drop = FALSE]
+    standardized(sub_i, pr)
+  }))
+  rows[[length(rows) + 1]] <- cbind(
+    data.frame(vowel_a = pr[1], vowel_b = pr[2], stringsAsFactors = FALSE), res, extra
+  )
+}
+if (!length(rows)) stop("phontrast returned no rows for any vowel pair (check min_tokens and token counts).")
+out <- do.call(rbind, rows)
+write.csv(out, out_csv, row.names = FALSE)
+"""
+
+
 def build_r_script(
     features: Sequence[str],
     category_col: str,
     group_col: Optional[str],
-    output: str = "wide",
-    package: str = "phontrast",
+    bw: str = "Hpi",
+    density: str = "kde",
+    mc_n: int = 10_000,
+    min_tokens: int = 20,
+    n_boot: int = 0,
+    conf_level: float = 0.95,
+    eps: float = 1e-6,
 ) -> str:
-    """Generate the R driver script (reads in_csv arg, writes out_csv arg)."""
-    group_expr = f'"{group_col}"' if group_col else "NULL"
-    return f"""#!/usr/bin/env Rscript
-args <- commandArgs(trailingOnly = TRUE)
-in_csv  <- args[1]
-out_csv <- args[2]
-suppressMessages(library({package}))
-d <- read.csv(in_csv, check.names = FALSE, stringsAsFactors = FALSE)
-res <- compare_overlap_metrics(
-  data         = d,
-  features     = {_r_string_vector(features)},
-  category_col = "{category_col}",
-  group_col    = {group_expr},
-  output       = "{output}"
-)
-write.csv(res, out_csv, row.names = FALSE)
-"""
+    """Generate the R driver script (reads in_csv arg, writes out_csv arg).
+
+    ``n_boot`` > 0 turns on phontrast's bootstrap (``do_boot = TRUE``), which
+    adds ``<metric>_mean/_sd/_ci_lower/_ci_upper`` columns.
+    """
+    if bw not in R_BANDWIDTHS:
+        raise ValueError(f"bw must be one of {R_BANDWIDTHS}, got {bw!r}")
+    if density not in R_DENSITIES:
+        raise ValueError(f"density must be one of {R_DENSITIES}, got {density!r}")
+    subs = {
+        "@MIN_VERSION@": ".".join(map(str, PHONTRAST_MIN_VERSION)),
+        "@FEATURES@": _r_string_vector(features),
+        "@CATEGORY@": _r_string(category_col),
+        "@GROUP@": _r_string(group_col),
+        "@MIN_TOKENS@": str(int(min_tokens)),
+        "@BW@": _r_string(bw),
+        "@DENSITY@": _r_string(density),
+        "@MC_N@": f"{int(mc_n)}L",
+        "@EPS@": repr(float(eps)),
+        "@DO_BOOT@": "TRUE" if n_boot > 0 else "FALSE",
+        "@N_BOOT@": str(int(n_boot) if n_boot > 0 else 1000),
+        "@CONF_LEVEL@": repr(float(conf_level)),
+    }
+    script = _R_TEMPLATE
+    for key, value in subs.items():
+        script = script.replace(key, value)
+    return script
 
 
-def compare_overlap_metrics(
+def run_phontrast(
     df: pd.DataFrame,
     features: Sequence[str],
     category_col: str = "vowel_canon",
     group_col: Optional[str] = None,
-    output: str = "wide",
+    bw: str = "Hpi",
+    density: str = "kde",
+    mc_n: int = 10_000,
+    min_tokens: int = 20,
+    n_boot: int = 0,
+    conf_level: float = 0.95,
     work_dir: Optional[str | Path] = None,
     rscript: str = "Rscript",
     on_output: Optional[Callable[[str], None]] = None,
     timeout: Optional[float] = 1800,
 ) -> PhontrastResult:
-    """Run phontrast's ``compare_overlap_metrics`` on ``df`` and return its table.
+    """Run phontrast on every vowel pair in ``df`` and return the combined table.
 
     Only the needed columns are exported to R; rows with missing feature values
-    are dropped first.
+    are dropped first.  The table has one row per (vowel pair × group level)
+    with phontrast's wide columns (``jsd``, ``js_distance``, ``pillai``,
+    ``pillai_p_value``, ``bhatt_dist``, ``bhatt_affinity``,
+    ``mahalanobis_dist``, ``percent_overlap`` …) plus ``vowel_a``/``vowel_b``,
+    ``n_a``/``n_b``, the proportion-standardized Pillai fields and
+    ``pillai_null_p95``.
     """
     keep = [c for c in [*features, category_col, group_col] if c and c in df.columns]
     subset = df[keep].dropna(subset=[c for c in features if c in df.columns]).copy()
@@ -179,11 +315,12 @@ def compare_overlap_metrics(
     out_csv = work / "phontrast_output.csv"
     script_path = work / "run_phontrast.R"
     subset.to_csv(in_csv, index=False)
+    script_path.write_text(build_r_script(
+        features, category_col, group_col, bw=bw, density=density, mc_n=mc_n,
+        min_tokens=min_tokens, n_boot=n_boot, conf_level=conf_level,
+    ))
 
-    status = phontrast_status(rscript)
-    package = status.package or _R_PACKAGES[0]
-    script_path.write_text(build_r_script(features, category_col, group_col, output, package))
-
+    status = phontrast_status(rscript, wait=True)
     notes: list[str] = []
     if not status.rscript_path:
         notes.append("Rscript not found; cannot run phontrast (use the built-in engine).")
@@ -191,11 +328,8 @@ def compare_overlap_metrics(
             result=CommandResult([rscript], 127, "", "Rscript not found"),
             script_path=script_path, input_csv=in_csv, notes=notes,
         )
-    if status.package == "phonJSD":
-        notes.append(
-            "Using the legacy phonJSD install; the package is now published as "
-            "phontrast (remotes::install_github('berrygrant/phontrast'))."
-        )
+    if status.package_installed and not status.supported:
+        notes.append(status.install_hint)
 
     result = run_streaming(
         [rscript, str(script_path), str(in_csv), str(out_csv)],
@@ -213,3 +347,7 @@ def compare_overlap_metrics(
         result=result, data=data, script_path=script_path,
         input_csv=in_csv, output_csv=out_csv, notes=notes,
     )
+
+
+# Name used before the phontrast 2.4.1 port (mirrors phontrast's own deprecated alias).
+compare_overlap_metrics = run_phontrast

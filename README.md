@@ -129,19 +129,25 @@ Colors come from a colorblind-safe palette.
 
 The **Jensen–Shannon Divergence (JSD)** between two vowels' distributions in
 normalized formant space says how distinguishable they are: **1** fully
-separated, **0** indistinguishable. Vowelchemy reports it alongside **Pillai's
-trace** and **Bhattacharyya overlap** so you can triangulate, and can compute
-all three within each level of a factor to reveal mergers in apparent time.
+separated, **0** indistinguishable. Vowelchemy reports it with its metric form
+**√JSD** (the Jensen–Shannon distance), **Pillai's trace** with an F-test
+*p*-value, the **proportion-standardized Pillai** score (`pillai_eq`, which
+removes the effect of unequal token counts between the two vowels), Stanley &
+Sneller's sample-size threshold for merger (`pillai_null_p95`),
+**Bhattacharyya** distance/affinity, **Mahalanobis** distance and the
+**overlap** proportion — within each level of a factor if you like, to reveal
+mergers in apparent time. Bootstrap CIs are available for every metric.
 
-Two engines produce these numbers. The built-in Python engine (KDE-based,
-base-2 JSD in `[0, 1]`) needs nothing extra, so the stage always works. If R
-and [phontrast](https://github.com/berrygrant/phontrast) are installed,
-Vowelchemy calls `compare_overlap_metrics()` and returns its fuller table
-(adding Mahalanobis distance and percent overlap):
+The built-in engine is a Python port of the estimators in
+[phontrast](https://github.com/berrygrant/phontrast) 2.4.1 (Monte-Carlo
+plug-in JSD on kernel densities with phontrast's partial leave-one-out
+correction, same column names), so the stage always works. If R and phontrast
+(≥ 2.3.1) are installed, Vowelchemy can instead drive the package itself —
+`phontrast()` plus `pillai_overlap(proportion_standardized = TRUE)` for every
+vowel pair — and return its table:
 
 ```r
-install.packages("remotes")
-remotes::install_github("berrygrant/phontrast")
+install.packages("phontrast")
 ```
 
 ---
@@ -214,7 +220,7 @@ df = analysis.add_vowel_labels(df, schema)
 df = normalization.normalize(df, schema, "lobanov").data
 sep = metrics.pairwise_separation(df, schema,
                                   vowels=["LOT", "THOUGHT"], group_by="Age Group")
-print(sep[["group_value", "vowel_a", "vowel_b", "JSD", "Pillai"]])
+print(sep[["group_value", "vowel_a", "vowel_b", "jsd", "js_distance", "pillai", "pillai_eq"]])
 ```
 
 ## Bringing your own vowel data
@@ -271,7 +277,7 @@ src/vowelchemy/     Python library + API (pip installable)
   cli.py            command line               alignment.py   MFA orchestration
   analysis.py       load / join / filter       extraction.py  new-fave orchestration
   normalization.py  Lobanov, ANAE, Bark, …     toolenv.py     find tools in conda envs
-  metrics.py        JSD, Pillai, Bhattacharyya phontrast.py   bridge to the R package
+  metrics.py        phontrast metrics (port)   phontrast.py   bridge to the R package
   visualization.py  Plotly figures             jobs.py        background jobs
   webui/            built UI, shipped in the wheel
 frontend/           React + Vite + TypeScript source
@@ -321,8 +327,8 @@ button).
 Vowelchemy orchestrates and builds on these tools — please cite them too:
 
 - Berry, G. M. (2026). *phontrast: Contrast and separation metrics for
-  phonological categories* (Version 2.4.0) [Computer software].
-  https://doi.org/10.5281/zenodo.21864533 (formerly *phonJSD*)
+  phonological categories* (Version 2.4.1) [Computer software]. CRAN.
+  https://doi.org/10.5281/zenodo.20816585 (formerly *phonJSD*)
 - Fruehwald, J. (2024). *new-fave: Vowel formant extraction* [Computer
   software]. Zenodo. https://doi.org/10.5281/zenodo.14837885
 - McAuliffe, M., Socolof, M., Mihuc, S., Wagner, M., & Sonderegger, M. (2017).

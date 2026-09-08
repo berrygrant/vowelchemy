@@ -139,24 +139,27 @@ same mean and completely different shapes.
 Go to **6 · Separation**. Under **Vowels to compare**, click the `BOT` and
 `BOUGHT` chips (that's LOT and THOUGHT — the *cot* and *caught* vowels). Set
 **Compute within each level of** to `Age Group`, leave **Space** at `F1 × F2`,
-tick **bootstrap JSD confidence intervals** (off by default because it's
+tick **bootstrap CIs for every metric** (off by default because it's
 slower), and click **Compute separation**.
 
-The table reports **JSD** (Jensen–Shannon Divergence): 1 = fully separated
-vowels, 0 = indistinguishable (merged). The demo corpus has a deliberately
-planted *age-graded merger*, so:
+The table reports **JSD** (`jsd`, Jensen–Shannon Divergence): 1 = fully
+separated vowels, 0 = indistinguishable (merged). The demo corpus has a
+deliberately planted *age-graded merger*, so:
 
 > **Check yourself.** Your JSD values should be approximately (±0.05):
-> **Older ≈ 0.96** · **Middle ≈ 0.67** · **Young ≈ 0.10**, with verdicts
+> **Older ≈ 0.97** · **Middle ≈ 0.69** · **Young ≈ 0.08**, with verdicts
 > going from "strongly separated" to "very high overlap (likely merged)".
 > If you see that gradient, you've just measured a merger in apparent time —
 > the core move of Part B. Don't see it? You've most likely picked the wrong
 > vowel chips or the wrong grouping column — re-check those before anything
 > else.
 
-Also note the **Pillai** column (a regression-based separation measure — the
-one most sociophonetics papers report) and the CI columns you enabled. Two
-metrics agreeing is much stronger evidence than one.
+Also note **√JSD** (`js_distance`, the same information on a proper distance
+scale), the **Pillai** column (a regression-based separation measure — the
+one most sociophonetics papers report), its balanced-design equivalent
+**pillai_eq** (the same thing with the effect of unequal token counts
+removed), and the CI columns you enabled. Two metrics agreeing is much
+stronger evidence than one.
 
 ### A.4 Two habits to take with you
 
@@ -485,22 +488,36 @@ an outlier with an absurd F1 is usually a mismeasurement, not a discovery.
 In **6 · Separation**: under **Vowels to compare**, click **BOT** and
 **BOUGHT**; **Compute within each level of** `Age Group`; **Space**
 `F1 × F2`; **Engine** — phontrast if the sidebar dot is green (the lab's
-canonical R package), otherwise the built-in engine (methodologically
-aligned; fine for coursework). Tick **both** checkboxes — **bootstrap JSD
-confidence intervals** and **Pillai permutation p-value** (they're off by
+canonical R package), otherwise the built-in engine (a port of the same
+estimators; fine for coursework). Tick **both** checkboxes — **bootstrap CIs
+for every metric** and **Pillai permutation p-value** (they're off by
 default because they're slower, but Part B's evidence standard needs them) —
 then click **Compute separation**.
 
 Read the table like this:
 
-- **JSD** with its bootstrap CI — the headline separation number per group.
-- **Pillai** with its permutation p — the field-standard corroborator
-  (Hay, Warren & Drager, 2006; Nycz & Hall-Lew, 2013).
+- **JSD** (`jsd`) with its bootstrap CI (`jsd_ci_lower`/`jsd_ci_upper`) — the
+  headline separation number per group — and **√JSD** (`js_distance`), the
+  same quantity on a proper distance scale; report both (Berry, 2026a).
+- **Pillai** (`pillai`) with its F-test p (`pillai_p_value`) and permutation
+  p (`pillai_perm_p`) — the field-standard corroborator (Hay, Warren &
+  Drager, 2006; Nycz & Hall-Lew, 2013).
+- **pillai_eq** — Pillai with the effect of unequal token counts removed
+  (Berry, 2026b). LOT and THOUGHT rarely come in equal numbers, so this is
+  the Pillai to compare across groups. A blank `pillai_eq` means the
+  bias-corrected separation came out negative — itself a near-merger signal.
+- **pillai_null_p95** — the Pillai that two *merged* vowels would produce 95%
+  of the time with this many tokens (Stanley & Sneller, 2023). A Pillai at or
+  below it is consistent with merger at your N; a Pillai above it is not
+  automatically a contrast — check the CI.
 - The **verdict** line translates JSD: ≥ 0.85 strongly separated · ≥ 0.60
   moderately separated · ≥ 0.35 substantial overlap (possibly merging) ·
-  below that, very high overlap (likely merged).
+  below that, very high overlap (likely merged). It is Vowelchemy's own
+  rule of thumb, not a published threshold — never cite it as one.
 - **N per cell.** Treat any cell under ~20 tokens per vowel as unstable —
-  the CI will be wide and you should say so, not hide it.
+  the CI will be wide and you should say so, not hide it. JSD does not go to
+  0 in small samples even for merged vowels, and Pillai needs a lot of data
+  to settle (Stanley & Sneller, 2023) — `pillai_null_p95` shows how much.
 
 > **What to report (all of it, every time):** the metric *and* its CI; both
 > Ns per group; the normalization method; the space (F1×F2 vs. F1-only);
@@ -547,9 +564,12 @@ A defensible methods paragraph, with every choice you made in this tutorial
 > with pre-rhotic tokens and tokens beyond 2.5 SD of their speaker×vowel
 > mean (n = … excluded), leaving N = … tokens. Formants were Lobanov (1971)
 > normalized. Category separation in F1×F2 space was quantified per age
-> group with Jensen–Shannon Divergence (Lin, 1991) with bootstrap 95% CIs
-> and Pillai scores (Pillai, 1955; Nycz & Hall-Lew, 2013), computed with
-> phontrast (Berry, 2026) via Vowelchemy.
+> group with Jensen–Shannon Divergence (Lin, 1991) and its square root, the
+> Jensen–Shannon distance (Endres & Schindelin, 2003), with bootstrap 95%
+> CIs, and with Pillai scores (Pillai, 1955; Nycz & Hall-Lew, 2013) reported
+> both raw and proportion-standardized for unequal token counts (Berry,
+> 2026b), against the sample-size threshold of Stanley & Sneller (2023); all
+> computed with phontrast 2.4.1 (Berry, 2026) via Vowelchemy.
 
 Full citations for every *method* live in
 [`docs/REFERENCES.md`](REFERENCES.md) (with a feature → citation map), and

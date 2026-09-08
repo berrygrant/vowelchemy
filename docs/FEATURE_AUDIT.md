@@ -44,13 +44,14 @@ engine).
 ### analysis.py — dataset assembly
 - `read_table` (the one CSV/TSV loader, delimiter-sniffing), `join_demographics` (auto-detected speaker key, string-normalized, `_spk` collision suffix), `add_vowel_labels` (+ custom IPA/non-English `label_map`), `canonical_vowel_series` (the shared "which vowel is this row" definition), `list_vowels`, `select_vowels` (ARPABET/lexical-set/keyword), `candidate_grouping_columns`, `apply_filters`, `summarize`, `flag_outliers` (n-SD from speaker×vowel centroid).
 
-### metrics.py — built-in separation engine
-- `jensen_shannon_divergence`: base-2 JSD ∈ [0,1] via KDE on a shared padded grid; fitted-Gaussian fallback for sparse cells; `detail=True` reports the estimator actually used (`kde` / `gaussian` / `kde+gaussian`), which is what the `method` column records.
-- `pillai_score` (two-group MANOVA trace) + `pillai_p` (permutation test); `bhattacharyya_overlap` (analytic Gaussian coefficient); `jsd_ci` (percentile bootstrap).
-- `pairwise_separation`: all pairs × group levels, `min_tokens` floor (default 5), optional bootstrap/permutations, sorted by JSD.
+### metrics.py — built-in separation engine (port of phontrast 2.4.1)
+- `jensen_shannon_divergence`: base-2 JSD ∈ [0,1] with phontrast's Monte-Carlo plug-in — each vowel's KDE (`scott.diag` bandwidth, or full-covariance `scott`) evaluated at its own tokens, partial leave-one-out correction `alpha = n/(n+20)` on the self-density; `density="mvnorm"` fits one Gaussian per vowel and draws `mc_n` fresh points instead. `jensen_shannon_distance` = √JSD. Each category needs `max(2, d+1)` tokens.
+- `pillai_test` (two-group MANOVA trace + the F-approximation p-value of `summary.manova`), `pillai_standardized` (proportion-standardized Pillai: `pillai_eq`, `d2_plugin`, `d2_unbiased`, `pillai_eq_fallback`, `d2_fallback`, `bias_2p_over_H`, `fragile_minority`, `H` — Becker 1986 / Lachenbruch & Mickey 1968 / Berry 2026b), `pillai_null_p95` (Stanley & Sneller 2023 e/m), `pillai_perm_p` (permutation test); `bhattacharyya` (distance + affinity, 1e-6 ridge), `mahalanobis_distance` (pooled covariance), `percent_overlap` (∫ min(p, q) by the same Monte-Carlo plug-in).
+- `pair_metrics` / `bootstrap_pair_metrics`: one row per pair with phontrast's column names; pooled-token bootstrap recomputing every metric per replicate (√ per replicate), `<metric>_n_boot/_mean/_sd/_ci_lower/_ci_upper`.
+- `pairwise_separation`: all pairs × group levels, phontrast's `min_tokens` on the pair total (default 20) plus ≥ 2 tokens per vowel, optional bootstrap/permutations, sorted by `jsd`.
 
 ### phontrast.py — canonical R engine (Berry 2026)
-- Detects `Rscript` plus the **phontrast** package, falling back to a legacy **phonJSD** install (the package was renamed; `compare_overlap_metrics()` is unchanged). Generates and runs an R driver over an exported CSV subset; graceful notes when R or output is missing.
+- Detects `Rscript` plus the **phontrast** package (≥ 2.3.1 required; an older phontrast or legacy **phonJSD** install is reported with an update hint). Generates and runs an R driver over an exported CSV subset that calls `phontrast()` per vowel pair (bandwidth, density, `min_tokens`, bootstrap options pass through) and binds `pillai_overlap(…, proportion_standardized = TRUE)` fields plus `pillai_null_p95` onto the wide table; graceful notes when R or output is missing.
 
 ### visualization.py — server-side Plotly (all figures theme-aware light/dark)
 - `vowel_space` (reversed F2×F1; ellipses + centroid labels; modes `scatter`/`contour`/`ellipse`; token thinning with per-category floor, thinned count in title), `formant_cross` (violin/box/strip with overlaid jittered tokens; 8k-row display thinning), `ridgeline`, `separation_bar` (bootstrap CIs as error bars), `separation_matrix`, `trajectory_space`/`trajectory_time`.

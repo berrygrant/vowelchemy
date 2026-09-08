@@ -192,8 +192,8 @@ def _cmd_separation(args: argparse.Namespace) -> int:
     if sep.empty:
         print("No vowel pairs met the minimum token threshold.")
         return 0
-    cols = ["group_value", "vowel_a", "vowel_b", "n_a", "n_b", "JSD", "Pillai",
-            "Bhattacharyya_overlap"]
+    cols = ["group_value", "vowel_a", "vowel_b", "n_a", "n_b", "jsd", "js_distance",
+            "pillai", "pillai_eq", "pillai_p_value", "bhatt_affinity", "percent_overlap"]
     print(sep[[c for c in cols if c in sep.columns]].to_string(index=False))
     if args.output:
         sep.to_csv(args.output, index=False)

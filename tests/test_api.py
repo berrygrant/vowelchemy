@@ -79,9 +79,24 @@ def test_separation_builtin_captures_merger(client):
         headers=h,
     ).json()
     recs = res["builtin"]["records"]
-    by_group = {r["group_value"]: r["JSD"] for r in recs}
+    by_group = {r["group_value"]: r["jsd"] for r in recs}
     assert by_group["Older"] > by_group["Young"]  # merger across apparent time
     assert res["figure_bar"] is not None
+    cols = res["builtin"]["columns"]
+    for col in ("js_distance", "pillai", "pillai_eq", "pillai_p_value", "pillai_null_p95",
+                "bhatt_affinity", "percent_overlap", "verdict"):
+        assert col in cols
+    assert "jsd_ci_lower" not in cols  # no bootstrap requested
+    assert res["plot_metric"] == "jsd"
+
+    # Charts can show any metric; mvnorm density is a supported option.
+    alt = client.post(
+        "/api/separation",
+        json={"vowels": ["AA", "AO"], "group_by": "Age Group", "engine": "builtin",
+              "density": "mvnorm", "plot_metric": "pillai_eq"},
+        headers=h,
+    ).json()
+    assert alt["plot_metric"] == "pillai_eq" and alt["figure_bar"] is not None
 
 
 def test_separation_requires_data(client):
@@ -135,7 +150,9 @@ def test_separation_bootstrap_and_verdict(client):
         headers=h,
     ).json()
     cols = res["builtin"]["columns"]
-    assert "JSD_lo" in cols and "Pillai_p" in cols and "verdict" in cols
+    assert "jsd_ci_lower" in cols and "jsd_ci_upper" in cols
+    assert "pillai_perm_p" in cols and "verdict" in cols
+    assert "js_distance_ci_upper" in res["full_csv"]  # every metric is bootstrapped
 
 
 def test_recipe_round_trip(client):
