@@ -66,7 +66,7 @@ corpus with a planted **age-graded low-back merger** (LOT ~ THOUGHT overlap
 grows across apparent time) and a stable **BET vs BEET** contrast, so every
 plot and metric has something real to show. Jump to **5 · Visualize** for
 *BET/BEET F1 by Age Group*, or **6 · Separation** to watch the LOT~THOUGHT JSD
-fall from ~0.96 (older) to ~0.10 (younger).
+fall from ~0.97 (older) to ~0.08 (younger).
 
 **New to research?** [`docs/TUTORIAL.md`](docs/TUTORIAL.md) is a guided
 walkthrough for undergraduates: a demo warm-up, then a complete real-corpus
@@ -249,7 +249,7 @@ running, from where, and which tools it can see:
 ```
 $ vowelchemy doctor
 Vowelchemy
-  version   : 0.2.1
+  version   : 0.3.0
   code      : /Users/you/vowelchemy/src/vowelchemy
   python    : 3.12.4 (/Users/you/vowelchemy/.venv-app/bin/python3)
   UI bundle : /Users/you/vowelchemy/src/vowelchemy/webui
