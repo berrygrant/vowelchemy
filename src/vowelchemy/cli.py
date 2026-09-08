@@ -90,12 +90,26 @@ def _cmd_doctor(args: argparse.Namespace) -> int:
     # The CLI can afford to wait for real version strings.
     pj = phontrast.phontrast_status(wait=True)
     mfa, nf = alignment.mfa_status(wait=True), extraction.newfave_status(wait=True)
+    if pj.available:
+        pj_detail = f"{pj.package} {pj.version} (R {pj.r_version}: {pj.rscript_path})"
+    elif pj.rscript_path:
+        what = ("phontrast not installed" if not pj.package_installed
+                else f"{pj.package} {pj.version} is too old")
+        pj_detail = f"R {pj.r_version} at {pj.rscript_path} — {what} (built-in engine used)"
+    else:
+        pj_detail = "R not found (built-in engine used)"
     rows = [("MFA", mfa.available, _tool_detail(mfa)),
             ("new-fave", nf.available, _tool_detail(nf)),
-            ("phontrast (R)", pj.available,
-             f"{pj.package} {pj.version}" if pj.available else "not found (built-in JSD used)")]
+            ("phontrast (R)", pj.available, pj_detail)]
     for label, available, detail in rows:
         print(f"  {'OK ' if available else '-- '}{label:14s}: {detail}")
+    if len(pj.candidates) > 1:
+        print("  R installations found:")
+        for c in pj.candidates:
+            pkg = f"{c['package']} {c['version']}" if c.get("package") else "phontrast not installed"
+            print(f"    R {c.get('r_version')}: {c['path']} — {pkg}")
+    if not pj.available:
+        print(f"  {pj.install_hint}")
 
     envs = toolenv.discover_environments()
     if envs:

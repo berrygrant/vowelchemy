@@ -81,7 +81,12 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
         <div className="side-heading">Tools</div>
         <ToolRow name="MFA" info={status?.tools.mfa} onClick={() => setShowTools(true)} />
         <ToolRow name="new-fave" info={status?.tools.newfave} onClick={() => setShowTools(true)} />
-        <ToolRow name="phontrast" info={status?.tools.phontrast} absentNote="built-in JSD" />
+        <ToolRow
+          name="phontrast"
+          info={status?.tools.phontrast}
+          absentNote="built-in engine"
+          onClick={() => setShowTools(true)}
+        />
         <button className="btn btn-small side-tools" onClick={() => setShowTools(true)}>
           🔧 Set up tools
         </button>

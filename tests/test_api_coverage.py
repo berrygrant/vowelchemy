@@ -102,6 +102,37 @@ def test_figure_ridgeline(client):
     assert len(fig["data"]) >= 3  # one density per age group
 
 
+def test_tools_panel_can_point_at_an_r(client, tmp_path, monkeypatch):
+    import stat
+
+    from vowelchemy import phontrast, toolenv
+
+    monkeypatch.setenv("VOWELCHEMY_HOME", str(tmp_path / "state"))
+    monkeypatch.delenv("VOWELCHEMY_RSCRIPT", raising=False)
+    monkeypatch.setattr(phontrast, "_platform_rscripts", lambda: [])
+    monkeypatch.setattr(phontrast, "_conda_rscripts", lambda: [])
+    monkeypatch.setattr(toolenv, "resolve", lambda exe: None)
+    toolenv.invalidate_caches()
+    exe = tmp_path / "R" / "bin" / "Rscript"
+    exe.parent.mkdir(parents=True)
+    exe.write_text('#!/bin/sh\necho "R 4.4.1"\necho "LIB /x/lib"\necho "PKG phontrast 2.4.1"\n')
+    exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+
+    assert client.post("/api/tools/rscript", json={"path": str(tmp_path / "nowhere")}).status_code == 400
+    body = client.post("/api/tools/rscript", json={"path": str(tmp_path / "R")}).json()  # the folder
+    assert body["tools"]["phontrast"]["available"] and body["tools"]["phontrast"]["path"] == str(exe)
+    assert body["tools"]["phontrast"]["r_version"] == "4.4.1"
+    assert body["r"]["selected"] == str(exe) and body["r"]["candidates"][0]["in_use"]
+    assert body["install"]["phontrast"]["possible"] is False  # already installed
+    status = client.get("/api/status").json()
+    assert status["tools"]["phontrast"]["available"] and status["tools"]["phontrast"]["path"] == str(exe)
+
+    body = client.post("/api/tools/rscript", json={"path": None}).json()
+    assert body["r"]["selected"] is None and not body["tools"]["phontrast"]["available"]
+    assert "cloud.r-project.org" in body["tools"]["phontrast"]["hint"]
+    toolenv.invalidate_caches()
+
+
 def test_separation_csv_download(client):
     h = H("cov-sepcsv")
     client.post("/api/demo", headers=h)

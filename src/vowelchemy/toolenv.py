@@ -234,6 +234,17 @@ def discover_environments(use_conda_cli: bool = True) -> list[ToolEnvironment]:
 # whole app crawls on exactly the machines that *have* the tools installed.
 _VERSION_CACHE: dict[str, tuple[float, Optional[str]]] = {}
 _VERSION_TTL = 600.0
+# Bumped per key by invalidate_caches(): a probe that started before the bump
+# (e.g. the startup warm-up) must not store its stale answer over a fresh one
+# taken after the user chose a different environment or R.
+_GENERATION: dict[str, int] = {}
+
+
+def _store(key: str, generation: int, value: Optional[str]) -> None:
+    import time
+
+    if _GENERATION.get(key, 0) == generation:
+        _VERSION_CACHE[key] = (time.time(), value)
 
 
 def cached_version(key: str, probe: "Callable[[], Optional[str]]") -> Optional[str]:
@@ -241,11 +252,11 @@ def cached_version(key: str, probe: "Callable[[], Optional[str]]") -> Optional[s
     import time
 
     hit = _VERSION_CACHE.get(key)
-    now = time.time()
-    if hit is not None and (now - hit[0]) < _VERSION_TTL:
+    if hit is not None and (time.time() - hit[0]) < _VERSION_TTL:
         return hit[1]
+    generation = _GENERATION.get(key, 0)
     value = probe()
-    _VERSION_CACHE[key] = (now, value)
+    _store(key, generation, value)
     return value
 
 
@@ -267,23 +278,33 @@ def cached_version_async(key: str, probe: "Callable[[], Optional[str]]") -> Opti
         return hit[1]
     if key not in _INFLIGHT:
         _INFLIGHT.add(key)
+        generation = _GENERATION.get(key, 0)
 
         def run() -> None:
             try:
                 value = probe()
             except Exception:
                 value = None
-            _VERSION_CACHE[key] = (time.time(), value)
+            _store(key, generation, value)
             _INFLIGHT.discard(key)
 
         threading.Thread(target=run, daemon=True).start()
     return hit[1] if hit is not None else None
 
 
-def invalidate_caches() -> None:
-    """Forget probed versions (after switching environments or installing)."""
-    _VERSION_CACHE.clear()
-    _INFLIGHT.clear()
+def invalidate_caches(prefix: Optional[str] = None) -> None:
+    """Forget probed versions (after switching environments or installing).
+
+    With ``prefix``, only the cache keys starting with it — e.g.
+    ``"phontrast::"`` after choosing an R — so the other tools keep their
+    probed versions instead of flickering to "not found".
+    """
+    keys = [k for k in set(_VERSION_CACHE) | set(_INFLIGHT) | set(_GENERATION)
+            if prefix is None or k.startswith(prefix)]
+    for key in keys:
+        _VERSION_CACHE.pop(key, None)
+        _INFLIGHT.discard(key)  # a fresh probe may start; the old one's answer is dropped
+        _GENERATION[key] = _GENERATION.get(key, 0) + 1
 
 
 def selected_prefix() -> Optional[Path]:

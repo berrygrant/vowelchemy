@@ -7,16 +7,20 @@ import { FolderPicker } from './FolderPicker'
 import { LogBox, Notice } from './ui'
 
 const MAMBA_CMD = 'mamba create -n aligner -c conda-forge montreal-forced-aligner'
+const R_INSTALL_CMD = 'install.packages("phontrast")'
 
 // Aligning and extracting need two outside programs. MFA is conda/mamba-only
 // (its Kaldi bindings aren't on PyPI), so the app borrows it from an existing
 // environment; new-fave is a pip package, so the app can install it — into
 // itself, or into the environment you picked when it can't install into itself
-// (the packaged app has no pip of its own).
+// (the packaged app has no pip of its own). phontrast is an R package: the app
+// finds R in the usual places (or where you point it) and can install the
+// package into that R.
 export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) {
   const [data, setData] = useState<ToolsPayload | null>(null)
   const [picking, setPicking] = useState(false)
-  const [copied, setCopied] = useState(false)
+  const [pickingR, setPickingR] = useState(false)
+  const [copied, setCopied] = useState('')
   const [flash, setFlash] = useState('')
   const { busy, error, setError, run } = useBusy()
 
@@ -27,6 +31,12 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
   const install = useJob(undefined, (job) => {
     const ok = (job.result as { ok?: boolean } | null)?.ok
     setFlash(ok ? 'new-fave installed.' : '')
+    void load(true)
+    void ctx.refresh()
+  })
+  const installR = useJob(undefined, (job) => {
+    const ok = (job.result as { ok?: boolean } | null)?.ok
+    setFlash(ok ? 'phontrast installed — the R engine is ready in stage 6.' : '')
     void load(true)
     void ctx.refresh()
   })
@@ -56,16 +66,36 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
       )
     })
 
+  const chooseR = (path: string | null) =>
+    run(async () => {
+      setFlash('')
+      const next: ToolsPayload = await api.post('/api/tools/rscript', { path })
+      setData(next)
+      await ctx.refresh()
+      const pt = next.tools.phontrast
+      setFlash(
+        path
+          ? pt.available
+            ? `Using R ${pt.r_version} — phontrast ${pt.version} ready.`
+            : `Using R ${pt.r_version ?? ''} at ${pt.path} — phontrast is not installed there yet.`
+          : 'Back to finding R automatically.',
+      )
+    })
+
   const startInstall = () => {
     setFlash('')
     return install.start('/api/tools/install', { tool: 'newfave' })
   }
+  const startInstallR = () => {
+    setFlash('')
+    return installR.start('/api/tools/install', { tool: 'phontrast' })
+  }
 
-  const copyCmd = () => {
-    navigator.clipboard?.writeText(MAMBA_CMD).then(
+  const copy = (text: string) => {
+    navigator.clipboard?.writeText(text).then(
       () => {
-        setCopied(true)
-        window.setTimeout(() => setCopied(false), 1800)
+        setCopied(text)
+        window.setTimeout(() => setCopied(''), 1800)
       },
       () => setError('Could not copy — select the command and copy it manually.'),
     )
@@ -73,8 +103,22 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
 
   const mfa = data?.tools.mfa
   const nf = data?.tools.newfave
+  const pt = data?.tools.phontrast
   const nfInstall = data?.install?.newfave
+  const ptInstall = data?.install?.phontrast
   const envs = data?.environments ?? []
+  const rInfo = data?.r
+  const rCandidates = rInfo?.candidates ?? []
+
+  const phontrastLine = !pt
+    ? '…'
+    : pt.available
+      ? `${pt.version} · R ${pt.r_version}`
+      : pt.probing
+        ? 'looking for R…'
+        : pt.path
+          ? `R ${pt.r_version} found, phontrast ${pt.version ? 'too old' : 'not installed'}`
+          : 'R not found'
 
   return (
     <>
@@ -89,9 +133,9 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
 
           <div className="browser">
             <p className="muted small">
-              Stages 1 and 4–6 work without these. You only need them to align and measure raw
-              audio yourself — if your lab gave you an extracted vowel CSV, close this and load it
-              in stage 3.
+              Stages 1 and 4–6 work without these. You only need MFA and new-fave to align and
+              measure raw audio yourself — if your lab gave you an extracted vowel CSV, close this
+              and load it in stage 3. phontrast is optional: stage 6 has a built-in port of it.
             </p>
 
             <div className="tool-status">
@@ -102,6 +146,10 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
               <div>
                 {nf?.available ? '🟢' : '⚪'} <b>new-fave</b> (formant measurement) —{' '}
                 {nf?.available ? nf.version ?? 'ready' : 'not found'}
+              </div>
+              <div>
+                {pt?.available ? '🟢' : '⚪'} <b>phontrast</b> (R separation engine, optional) —{' '}
+                {phontrastLine}
               </div>
             </div>
 
@@ -223,8 +271,8 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
             </div>
             <LogBox text={MAMBA_CMD} />
             <div className="row">
-              <button className="btn btn-small" onClick={copyCmd}>
-                {copied ? '✓ Copied' : '📋 Copy command'}
+              <button className="btn btn-small" onClick={() => copy(MAMBA_CMD)}>
+                {copied === MAMBA_CMD ? '✓ Copied' : '📋 Copy command'}
               </button>
             </div>
             <div className="muted small">
@@ -232,6 +280,111 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
               <code>mfa model download acoustic english_us_arpa</code> and{' '}
               <code>mfa model download dictionary english_us_arpa</code> yourself.
             </div>
+
+            {/* 4 · phontrast lives in R */}
+            <div className="tools-section">
+              <div className="glossary-term">phontrast (R) — optional</div>
+              <div className="muted small">
+                Stage 6 already computes phontrast's metrics with a built-in port. Installing the
+                R package adds the canonical R engine (and its Hpi bandwidth). Vowelchemy looks
+                for R in the usual places — the R installer, Homebrew, R.framework, conda
+                environments — even when R isn't on the PATH; if it still can't see yours, point
+                it at the folder R is installed in.
+              </div>
+            </div>
+
+            {rInfo?.selected && (
+              <div className="tool-selected">
+                <span>
+                  Using R at <code>{rInfo.selected}</code>
+                </span>
+                {rInfo.selected_locked ? (
+                  <span className="muted small">(set by VOWELCHEMY_RSCRIPT)</span>
+                ) : (
+                  <button className="btn btn-small" onClick={() => chooseR(null)} disabled={busy}>
+                    Find automatically
+                  </button>
+                )}
+              </div>
+            )}
+
+            {pt?.probing && <div className="muted small">Looking for R…</div>}
+
+            {rCandidates.length > 0
+              ? rCandidates.map((c) => (
+                  <div key={c.path} className={`env-row${c.in_use ? ' env-row-active' : ''}`}>
+                    <div>
+                      <div>
+                        {c.in_use ? '✓ ' : ''}
+                        <b>R {c.r_version ?? '?'}</b>{' '}
+                        <span className="muted small">
+                          {c.package
+                            ? `${c.package} ${c.version ?? ''}${c.supported ? '' : ' (too old)'}`
+                            : 'phontrast not installed'}
+                        </span>
+                      </div>
+                      <div className="muted small mono">{c.path}</div>
+                    </div>
+                    <button
+                      className="btn btn-small"
+                      onClick={() => chooseR(c.path)}
+                      disabled={busy || c.in_use}
+                    >
+                      {c.in_use ? 'In use' : 'Use this R'}
+                    </button>
+                  </div>
+                ))
+              : !busy &&
+                !pt?.probing && (
+                  <div className="muted small">
+                    No R installation found. Install R from{' '}
+                    <code>https://cloud.r-project.org</code>, then press <b>Scan again</b> — or, if
+                    R is already installed somewhere unusual, choose its folder below.
+                  </div>
+                )}
+
+            <div className="row">
+              <button className="btn btn-small" onClick={() => setPickingR(true)} disabled={busy}>
+                📁 Choose the R folder…
+              </button>
+              <button className="btn btn-small" onClick={() => void run(() => load(true))} disabled={busy}>
+                {busy ? <span className="spinner" /> : '↻ '} Scan again
+              </button>
+            </div>
+
+            {pt?.available ? (
+              <div className="muted small">✓ phontrast {pt.version} is installed in this R — nothing to do.</div>
+            ) : (
+              <>
+                {ptInstall?.possible && (
+                  <button className="btn" onClick={startInstallR} disabled={busy || installR.running}>
+                    {installR.running ? <span className="spinner" /> : '⬇️ '}
+                    {` ${pt?.version ? 'Update' : 'Install'} phontrast into R ${ptInstall.r_version ?? ''}`}
+                  </button>
+                )}
+                {pt?.path && !ptInstall?.possible && ptInstall?.reason && (
+                  <Notice kind="warn">{ptInstall.reason}</Notice>
+                )}
+                {pt?.path && (
+                  <div className="muted small">
+                    Or, in that R, run <code>{R_INSTALL_CMD}</code>{' '}
+                    <button className="btn btn-small" onClick={() => copy(R_INSTALL_CMD)}>
+                      {copied === R_INSTALL_CMD ? '✓ Copied' : '📋 Copy'}
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+            {installR.job && (
+              <>
+                <div className="muted small">
+                  {installR.running ? installR.job.phase ?? 'installing…' : ''}
+                </div>
+                <LogBox text={installR.job.log ?? ''} />
+              </>
+            )}
+            {installR.job?.status === 'error' && <Notice kind="error">{installR.job.error}</Notice>}
+            {installR.error && <Notice kind="error">{installR.error}</Notice>}
 
             {data?.app && (
               <div className="muted small app-info">
@@ -244,8 +397,8 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
         </div>
       </div>
 
-      {/* Sibling, not a child: nested inside the backdrop above, every click in
-          the picker also closed this panel. */}
+      {/* Siblings, not children: nested inside the backdrop above, every click in
+          a picker also closed this panel. */}
       {picking && (
         <FolderPicker
           title="Pick a conda/mamba environment folder"
@@ -255,6 +408,17 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
             void choose(p)
           }}
           onClose={() => setPicking(false)}
+        />
+      )}
+      {pickingR && (
+        <FolderPicker
+          title="Pick the folder R is installed in (or a conda environment with R)"
+          startPath={rInfo?.selected ?? undefined}
+          onPick={(p) => {
+            setPickingR(false)
+            void chooseR(p)
+          }}
+          onClose={() => setPickingR(false)}
         />
       )}
     </>

@@ -154,6 +154,11 @@ vowel pair — and return its table:
 install.packages("phontrast")
 ```
 
+Vowelchemy finds R on its own even when it isn't on the PATH (the Windows
+installer, `R.framework` and Homebrew on macOS, `/opt/R`, conda environments);
+if yours lives somewhere unusual, point it at the R folder in **Set up tools**,
+which can also install phontrast into that R for you.
+
 ---
 
 ## Aligning and measuring your own audio

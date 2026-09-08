@@ -340,7 +340,8 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
         "tools": {
             "mfa": {"available": mfa.available, "version": mfa.version, "hint": mfa.install_hint},
             "newfave": {"available": nf.available, "version": nf.version, "hint": nf.install_hint},
-            "phontrast": {"available": pj.available, "version": pj.version, "hint": pj.install_hint},
+            "phontrast": {"available": pj.available, "version": pj.version, "hint": pj.install_hint,
+                          "path": pj.rscript_path, "r_version": pj.r_version},
         },
         "data": {
             "loaded": s.vowel_df is not None,
@@ -541,8 +542,12 @@ class ToolEnvRequest(BaseModel):
 
 
 class ToolInstallRequest(BaseModel):
-    tool: str = "newfave"
+    tool: str = "newfave"  # "newfave" (pip) | "phontrast" (CRAN, into the R found)
     prefix: Optional[str] = None  # install into this environment instead of ours
+
+
+class RscriptRequest(BaseModel):
+    path: Optional[str] = None  # Rscript, or the folder R lives in; None clears
 
 
 # Discovery shells out to conda, so cache it: every tools response carries the
@@ -572,8 +577,15 @@ def _environments(force: bool = False) -> list[dict]:
 def _tools_payload(force_scan: bool = False) -> dict:
     mfa = alignment.mfa_status()
     nf = extraction.newfave_status()
+    # A scan waits for the R look-up: the panel is open and a spinner is showing.
+    pj = phontrast.phontrast_status(wait=force_scan)
     selected = toolenv.selected_prefix()
     install: dict[str, dict] = {}
+    r_cmd, r_reason = phontrast.install_plan(pj.rscript_path)
+    install["phontrast"] = {
+        "possible": r_cmd is not None and not pj.available, "reason": r_reason,
+        "target": "r", "path": pj.rscript_path, "r_version": pj.r_version,
+    }
     for tool in ("mfa", "newfave"):
         cmd, reason = toolenv.pip_install_plan(tool)
         entry = {"possible": cmd is not None, "reason": reason, "target": "app"}
@@ -593,9 +605,21 @@ def _tools_payload(force_scan: bool = False) -> dict:
                     "path": mfa.path, "hint": mfa.install_hint},
             "newfave": {"available": nf.available, "version": nf.version,
                         "path": nf.path, "hint": nf.install_hint},
+            "phontrast": {"available": pj.available, "version": pj.version,
+                          "path": pj.rscript_path, "hint": pj.install_hint,
+                          "r_version": pj.r_version, "library": pj.library,
+                          "probing": pj.probing},
         },
         "selected": str(selected) if selected else None,
         "selected_locked": bool(os.environ.get("VOWELCHEMY_TOOL_ENV")),
+        "r": {
+            "selected": pj.selected,
+            "selected_locked": bool(os.environ.get(phontrast.R_ENV_VAR)),
+            "candidates": [
+                {**c, "supported": phontrast._supported(c), "in_use": c.get("path") == pj.rscript_path}
+                for c in pj.candidates
+            ],
+        },
         "install": install,
         "environments": _environments(force=force_scan),
         "app": toolenv.app_info(),
@@ -609,8 +633,20 @@ def tools_overview():
 
 @app.get("/api/tools/environments")
 def tool_environments(refresh: bool = False):
-    """Scan for conda/mamba environments that already contain the tools."""
+    """Scan for conda/mamba environments that already contain the tools, and for R."""
+    if refresh:
+        toolenv.invalidate_caches("phontrast::")  # R may have been installed since
     return _tools_payload(force_scan=refresh)
+
+
+@app.post("/api/tools/rscript")
+def set_rscript(req: RscriptRequest):
+    """Point Vowelchemy at an R installation (Rscript, or the folder R lives in)."""
+    try:
+        phontrast.set_selected_rscript(req.path)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _tools_payload(force_scan=True)
 
 
 @app.post("/api/tools/environment")
@@ -627,9 +663,27 @@ def set_tool_environment(req: ToolEnvRequest):
     return _tools_payload()
 
 
+def _install_phontrast() -> dict:
+    """Install phontrast from CRAN into the R that was found (as a background job)."""
+    status = phontrast.phontrast_status(wait=True)
+    cmd, reason = phontrast.install_plan(status.rscript_path)
+    if cmd is None:
+        raise HTTPException(status_code=400, detail=reason)
+
+    def target(emit):
+        emit(f"Installing phontrast from CRAN with R {status.r_version} ({status.rscript_path})…")
+        res = run_streaming(cmd, on_output=emit)
+        toolenv.invalidate_caches("phontrast::")  # re-probe the R we just equipped
+        return {"ok": res.ok, "tool": "phontrast", **_tools_payload(force_scan=True)}
+
+    return {"job_id": JOBS.start("install", target).id}
+
+
 @app.post("/api/tools/install")
 def install_tool(req: ToolInstallRequest):
-    """Install a pip-installable tool (new-fave) here, or into a chosen environment."""
+    """Install new-fave (pip) here or into a chosen environment, or phontrast (CRAN) into R."""
+    if req.tool == "phontrast":
+        return _install_phontrast()
     prefix = req.prefix or (str(toolenv.selected_prefix() or "") or None
                             if toolenv.pip_install_plan(req.tool)[0] is None else None)
     cmd, reason = toolenv.pip_install_plan(req.tool, prefix=prefix)

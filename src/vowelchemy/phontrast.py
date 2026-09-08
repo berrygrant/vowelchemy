@@ -22,6 +22,18 @@ naming asymmetry to know about: in this table ``group`` holds the group
 *level* (phontrast's convention), whereas the built-in engine's table has
 ``group`` = the grouping column's name and ``group_value`` = the level.
 
+**Finding R.** ``Rscript`` is rarely on the ``PATH`` of a double-clicked app:
+the Windows installer never adds it, macOS launches apps with a bare
+``/usr/bin:/bin`` path, and conda's R is only visible when its environment is
+activated.  So :func:`candidate_rscripts` also looks in the standard install
+locations (the Windows registry and ``Program Files``, the macOS
+``R.framework`` and Homebrew, ``/usr/lib/R`` and ``rig``'s ``/opt/R`` on
+Linux, every conda environment) and the user can point Vowelchemy at an R
+explicitly (Set up tools, or ``VOWELCHEMY_RSCRIPT``).  Each R found is
+probed once — version, library, whether phontrast is installed — and the
+first with a usable phontrast wins; :func:`install_plan` can install the
+package into that R.
+
 When R is unavailable, :mod:`vowelchemy.metrics` is a native port of the same
 estimators (same column names), so the app works everywhere — see
 :func:`vowelchemy.metrics.pairwise_separation`.
@@ -29,8 +41,11 @@ estimators (same column names), so the app works everywhere — see
 
 from __future__ import annotations
 
+import json
+import os
 import re
 import subprocess
+import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -39,13 +54,13 @@ from typing import Callable, Optional, Sequence
 import pandas as pd
 
 from . import toolenv
-from .runners import CommandResult, run_streaming, which
+from .runners import CommandResult, run_streaming
 
 PHONTRAST_MIN_VERSION = (2, 3, 1)  # phontrast() + proportion-standardized Pillai
 PHONTRAST_INSTALL_HINT = (
-    "phontrast is an R (>= 4.1) package on CRAN. Install R, then in R run:\n"
-    '  install.packages("phontrast")\n'
-    "Ensure `Rscript` is on your PATH so vowelchemy can call it."
+    "R (>= 4.1) was not found. Install it from https://cloud.r-project.org — or, if it "
+    "is installed, point Vowelchemy at it (Set up tools ▸ phontrast). Then install the "
+    'package: in R run install.packages("phontrast").'
 )
 # Bandwidth selectors phontrast accepts (its default is the Hpi plug-in).
 R_BANDWIDTHS = ("Hpi", "Hscv", "Hpi.diag", "scott.diag")
@@ -55,6 +70,20 @@ R_DENSITIES = ("kde", "mvnorm")
 # (reported so the hint can say "update", not "install").
 _R_PACKAGES = ("phontrast", "phonJSD")
 
+# Where a chosen R is remembered (``VOWELCHEMY_RSCRIPT`` wins over the setting).
+R_SETTINGS_KEY = "rscript"
+R_ENV_VAR = "VOWELCHEMY_RSCRIPT"
+# Relative locations of Rscript inside a folder someone might pick: an R home,
+# its bin directory, the macOS framework, or a conda environment.
+_RSCRIPT_IN_FOLDER = (
+    "Rscript", "Rscript.exe",
+    "bin/Rscript", "bin/Rscript.exe", "bin/x64/Rscript.exe",
+    "Resources/bin/Rscript",                 # R.framework
+    "Scripts/Rscript.exe", "Lib/R/bin/Rscript.exe",  # conda r-base on Windows
+    "lib/R/bin/Rscript",                     # conda r-base (posix)
+)
+_MAX_PROBES = 8  # R installations to start when looking for phontrast
+
 
 def _version_tuple(version: Optional[str]) -> tuple[int, ...]:
     if not version:
@@ -62,11 +91,254 @@ def _version_tuple(version: Optional[str]) -> tuple[int, ...]:
     return tuple(int(p) for p in re.findall(r"\d+", version)[:3])
 
 
+# --------------------------------------------------------------------------- #
+# Finding R
+# --------------------------------------------------------------------------- #
+def selected_rscript() -> Optional[str]:
+    """The Rscript the user chose, if any (env var wins over settings)."""
+    override = os.environ.get(R_ENV_VAR)
+    if override:
+        return str(Path(override).expanduser())
+    stored = toolenv.read_settings().get(R_SETTINGS_KEY)
+    return str(Path(stored).expanduser()) if stored else None
+
+
+def rscript_in(path: str | os.PathLike) -> Optional[str]:
+    """``Rscript`` at ``path`` — the program itself, or a folder that contains it.
+
+    Accepts an R home (``…/R-4.4.1``), its ``bin`` directory, the macOS
+    ``R.framework`` (or one of its ``Versions``), or a conda environment.
+    """
+    p = Path(path).expanduser()
+    if p.is_file():
+        return str(p) if p.name.lower().startswith("rscript") else None
+    if p.is_dir():
+        for rel in _RSCRIPT_IN_FOLDER:
+            candidate = p / rel
+            if candidate.is_file():
+                return str(candidate)
+    return None
+
+
+def set_selected_rscript(path: Optional[str]) -> Optional[str]:
+    """Remember (or clear, with ``None``) the R to run phontrast with.
+
+    Validates that the path holds an Rscript that actually runs, so the UI can
+    explain a bad pick instead of silently storing it.  Returns the Rscript.
+    """
+    settings = toolenv.read_settings()
+    if not path:
+        settings.pop(R_SETTINGS_KEY, None)
+        toolenv.write_settings(settings)
+        toolenv.invalidate_caches("phontrast::")
+        return None
+    rscript = rscript_in(path)
+    if rscript is None:
+        raise ValueError(
+            f"No Rscript found at {path}. Pick the Rscript program itself, or the folder "
+            "R is installed in (the one with bin/ inside it)."
+        )
+    if probe_rscript(rscript) is None:
+        raise ValueError(f"{rscript} did not run as R (it could not report its version).")
+    settings[R_SETTINGS_KEY] = rscript
+    toolenv.write_settings(settings)
+    toolenv.invalidate_caches("phontrast::")  # probe the chosen R fresh
+    return rscript
+
+
+def _version_key(p: Path) -> tuple[int, ...]:
+    return tuple(int(x) for x in re.findall(r"\d+", p.name)) or (0,)
+
+
+def _versioned(parent: Path, pattern: str) -> list[Path]:
+    """Sub-directories of ``parent`` matching ``pattern``, newest version first."""
+    try:
+        kids = [d for d in parent.glob(pattern) if d.is_dir()]
+    except OSError:
+        return []
+    return sorted(kids, key=_version_key, reverse=True)
+
+
+def _windows_registry_r_homes() -> list[Path]:
+    """R installations recorded by the Windows installer (``HKLM/HKCU\\SOFTWARE\\R-core``)."""
+    try:
+        import winreg  # type: ignore[import-not-found]
+    except ImportError:
+        return []
+    homes: list[Path] = []
+    for hive in (winreg.HKEY_LOCAL_MACHINE, winreg.HKEY_CURRENT_USER):
+        for sub in (r"SOFTWARE\R-core\R", r"SOFTWARE\R-core\R64", r"SOFTWARE\WOW6432Node\R-core\R"):
+            try:
+                with winreg.OpenKey(hive, sub) as key:
+                    try:
+                        homes.append(Path(winreg.QueryValueEx(key, "InstallPath")[0]))
+                    except OSError:
+                        pass
+                    i = 0
+                    while True:
+                        try:
+                            name = winreg.EnumKey(key, i)
+                        except OSError:
+                            break
+                        i += 1
+                        try:
+                            with winreg.OpenKey(key, name) as vk:
+                                homes.append(Path(winreg.QueryValueEx(vk, "InstallPath")[0]))
+                        except OSError:
+                            continue
+            except OSError:
+                continue
+    return homes
+
+
+def _platform_rscripts() -> list[Path]:
+    """Where installers put R on this platform, most likely / newest first."""
+    out: list[Path] = []
+    if sys.platform == "win32":
+        homes = _windows_registry_r_homes()
+        for root in (os.environ.get("ProgramFiles"), os.environ.get("ProgramW6432"),
+                     os.environ.get("ProgramFiles(x86)"),
+                     os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs"), "C:\\"):
+            if root:
+                homes += _versioned(Path(root) / "R", "R-*")
+        for home in homes:
+            out += [home / "bin" / "Rscript.exe", home / "bin" / "x64" / "Rscript.exe"]
+    elif sys.platform == "darwin":
+        framework = Path("/Library/Frameworks/R.framework")
+        out.append(framework / "Resources" / "bin" / "Rscript")
+        out += [v / "Resources" / "bin" / "Rscript" for v in _versioned(framework / "Versions", "*")]
+        out += [Path(p) for p in ("/usr/local/bin/Rscript", "/opt/homebrew/bin/Rscript",
+                                  "/opt/local/bin/Rscript")]
+        out += [d / "bin" / "Rscript" for d in _versioned(Path("/opt/R"), "*")]  # rig
+    else:
+        out += [Path(p) for p in ("/usr/bin/Rscript", "/usr/local/bin/Rscript",
+                                  "/usr/lib/R/bin/Rscript", "/usr/lib64/R/bin/Rscript")]
+        out += [d / "bin" / "Rscript" for d in _versioned(Path("/opt/R"), "*")]
+    return out
+
+
+def _conda_rscripts() -> list[Path]:
+    """Rscript inside conda/mamba environments (``r-base``), activated or not."""
+    prefixes = toolenv._candidate_prefixes()
+    for extra in toolenv._conda_cli_prefixes():
+        if extra not in prefixes:
+            prefixes.append(extra)
+    out: list[Path] = []
+    for prefix in prefixes:
+        out += [prefix / "bin" / "Rscript", prefix / "Scripts" / "Rscript.exe",
+                prefix / "Lib" / "R" / "bin" / "Rscript.exe", prefix / "lib" / "R" / "bin" / "Rscript"]
+    return out
+
+
+def candidate_rscripts() -> list[str]:
+    """Every Rscript we can find, most likely first, de-duplicated by real path.
+
+    Order: the R the user chose; the chosen tool environment, the app's own
+    environment and ``PATH``; the platform's standard install locations; conda
+    environments.
+    """
+    seen: set[Path] = set()
+    out: list[str] = []
+
+    def add(p: Optional[str | os.PathLike]) -> None:
+        if not p:
+            return
+        path = Path(p)
+        if not path.is_file():
+            return
+        try:
+            real = path.resolve()
+        except OSError:
+            return
+        if real in seen:
+            return
+        seen.add(real)
+        out.append(str(path))
+
+    add(selected_rscript())
+    add(toolenv.resolve("Rscript"))
+    for p in _platform_rscripts():
+        add(p)
+    for p in _conda_rscripts():
+        add(p)
+    return out
+
+
+# One R start per installation: version, home, first library, installed package.
+_PROBE_R = (
+    'cat("R", paste(R.version$major, R.version$minor, sep = "."), "\\n");'
+    'cat("HOME", R.home(), "\\n");'
+    'cat("LIB", .libPaths()[1], "\\n");'
+    'for (p in c("phontrast", "phonJSD")) if (requireNamespace(p, quietly = TRUE)) {'
+    ' cat("PKG", p, as.character(utils::packageVersion(p)), "\\n"); break }'
+)
+
+
+def probe_rscript(rscript: str, timeout: float = 30) -> Optional[dict]:
+    """Run ``rscript`` once; ``None`` if it does not behave like R.
+
+    Returns ``{"path", "r_version", "home", "library", "package", "version"}``
+    where ``package``/``version`` describe the installed phontrast (or legacy
+    phonJSD) and ``home`` is ``R.home()`` — two launchers of one installation
+    (``/usr/bin/Rscript`` and ``/usr/lib/R/bin/Rscript``) share it.
+    """
+    try:
+        res = subprocess.run([rscript, "-e", _PROBE_R], capture_output=True, text=True,
+                             timeout=timeout)
+    except (subprocess.SubprocessError, OSError):
+        return None
+    info: dict = {"path": rscript, "r_version": None, "home": None, "library": None,
+                  "package": None, "version": None}
+    for line in res.stdout.splitlines():
+        parts = line.split()
+        if not parts:
+            continue
+        if parts[0] == "R" and len(parts) > 1 and info["r_version"] is None:
+            info["r_version"] = parts[1]
+        elif parts[0] == "HOME":
+            info["home"] = line[len("HOME"):].strip() or None
+        elif parts[0] == "LIB":
+            info["library"] = line[len("LIB"):].strip() or None
+        elif parts[0] == "PKG" and len(parts) > 2:
+            info["package"], info["version"] = parts[1], parts[2]
+    return info if info["r_version"] else None
+
+
+def _supported(info: dict) -> bool:
+    return info.get("package") == "phontrast" and _version_tuple(info.get("version")) >= PHONTRAST_MIN_VERSION
+
+
+def _probe_all(explicit: Optional[str]) -> str:
+    """Probe the candidate R installations; JSON so the cache can hold it."""
+    paths = [explicit] if explicit else candidate_rscripts()[:_MAX_PROBES]
+    infos: list[dict] = []
+    homes: set[str] = set()
+    for info in (probe_rscript(p) for p in paths):
+        if not info:
+            continue
+        if info.get("home") in homes:
+            continue  # another launcher of an installation already listed
+        if info.get("home"):
+            homes.add(info["home"])
+        infos.append(info)
+    best = next((i for i, info in enumerate(infos) if _supported(info)), None)
+    if best is None:
+        best = next((i for i, info in enumerate(infos) if info.get("package")), None)
+    if best is None and infos:
+        best = 0
+    return json.dumps({"best": best, "candidates": infos})
+
+
 @dataclass
 class PhontrastStatus:
     rscript_path: Optional[str]
     package: Optional[str] = None  # which R package name resolved
     version: Optional[str] = None
+    r_version: Optional[str] = None
+    library: Optional[str] = None  # first library the probed R searches
+    candidates: list[dict] = field(default_factory=list)  # every R found, probed
+    selected: Optional[str] = None  # the R the user chose, if any
+    probing: bool = False  # first look-up still running in the background
 
     @property
     def package_installed(self) -> bool:
@@ -82,62 +354,85 @@ class PhontrastStatus:
         return bool(self.rscript_path) and self.supported
 
     @property
+    def path(self) -> Optional[str]:
+        return self.rscript_path
+
+    @property
     def install_hint(self) -> str:
+        need = ".".join(map(str, PHONTRAST_MIN_VERSION))
+        if self.probing:
+            return "Looking for R…"
+        where = f" (R {self.r_version} at {self.rscript_path})" if self.rscript_path else ""
         if self.package_installed and not self.supported:
             found = f"{self.package} {self.version or ''}".strip()
-            need = ".".join(map(str, PHONTRAST_MIN_VERSION))
-            return (f"{found} is installed but Vowelchemy needs phontrast >= {need} "
+            return (f"{found} is installed{where} but Vowelchemy needs phontrast >= {need} "
                     "(phontrast(), Jensen-Shannon distance, proportion-standardized Pillai). "
-                    'In R run: install.packages("phontrast")')
+                    'Set up tools ▸ Install phontrast updates it, or in that R run '
+                    'install.packages("phontrast").')
+        if self.rscript_path and not self.package_installed:
+            return (f"R {self.r_version} was found at {self.rscript_path}, but phontrast is not "
+                    "installed in it. Set up tools ▸ Install phontrast does it for you, or in "
+                    'that R run install.packages("phontrast").')
         return PHONTRAST_INSTALL_HINT
 
 
 def phontrast_status(rscript: str = "Rscript", wait: bool = False) -> PhontrastStatus:
-    """Detect Rscript and whether phontrast (or legacy phonJSD) is installed.
+    """Find R and phontrast; cached like the other tool probes.
 
-    Cached like the other tool probes: starting R twice per status poll is slow
-    enough to make the sidebar feel stuck. ``wait=False`` probes in the
-    background, so a request never waits for R to boot.
+    With the default ``rscript="Rscript"`` every candidate R is considered
+    (see :func:`candidate_rscripts`); an explicit path probes only that R.
+    Starting R takes a moment, so ``wait=False`` probes in the background and
+    reports ``probing=True`` until the answer is in.
     """
-    path = which(rscript)
-    if not path:
-        return PhontrastStatus(rscript_path=None)
-    key = f"phontrast::{path}"
-    probe = lambda: _probe_r_packages(rscript, path)  # noqa: E731
+    explicit = rscript if rscript != "Rscript" else None
+    key = f"phontrast::{explicit or 'auto'}"
+    probe = lambda: _probe_all(explicit)  # noqa: E731
     cached = (toolenv.cached_version(key, probe) if wait
               else toolenv.cached_version_async(key, probe))
+    selected = None if explicit else selected_rscript()
     if cached is None:
-        return PhontrastStatus(rscript_path=path)
-    package, _, version = cached.partition(" ")
-    return PhontrastStatus(rscript_path=path, package=package, version=version or None)
+        return PhontrastStatus(rscript_path=None, selected=selected, probing=not wait)
+    try:
+        data = json.loads(cached)
+    except ValueError:
+        return PhontrastStatus(rscript_path=None, selected=selected)
+    candidates = data.get("candidates") or []
+    best = data.get("best")
+    if best is None or best >= len(candidates):
+        return PhontrastStatus(rscript_path=None, candidates=candidates, selected=selected)
+    info = candidates[best]
+    return PhontrastStatus(
+        rscript_path=info.get("path"), package=info.get("package"), version=info.get("version"),
+        r_version=info.get("r_version"), library=info.get("library"),
+        candidates=candidates, selected=selected,
+    )
 
 
-def _probe_r_packages(rscript: str, path: str) -> Optional[str]:
-    """``"<package> <version>"`` for the first installed R package, else ``None``."""
-    for pkg in _R_PACKAGES:
-        try:
-            check = subprocess.run(
-                [rscript, "-e",
-                 f'cat(as.character(requireNamespace("{pkg}", quietly=TRUE)))'],
-                capture_output=True, text=True, timeout=60,
-            )
-        except (subprocess.SubprocessError, OSError):
-            return None
-        if not check.stdout.strip().endswith("TRUE"):
-            continue
-        version = ""
-        try:
-            v = subprocess.run(
-                [rscript, "-e", f'cat(as.character(packageVersion("{pkg}")))'],
-                capture_output=True, text=True, timeout=60,
-            )
-            version = v.stdout.strip()
-        except (subprocess.SubprocessError, OSError):
-            pass
-        return f"{pkg} {version}".strip()
-    return None
+# Installs into the user library (creating it if needed) so no admin rights are
+# required; CRAN ships binaries for Windows/macOS, Linux builds from source.
+_INSTALL_R = (
+    'lib <- Sys.getenv("R_LIBS_USER"); if (!nzchar(lib)) lib <- .libPaths()[1];'
+    ' lib <- path.expand(lib); dir.create(lib, recursive = TRUE, showWarnings = FALSE);'
+    ' .libPaths(c(lib, .libPaths()));'
+    ' options(repos = c(CRAN = "https://cloud.r-project.org"));'
+    ' install.packages("phontrast", lib = lib);'
+    ' if (!requireNamespace("phontrast", quietly = TRUE)) stop("phontrast did not install");'
+    ' cat("phontrast", as.character(utils::packageVersion("phontrast")), "installed in", lib, "\\n")'
+)
 
 
+def install_plan(rscript: Optional[str]) -> tuple[Optional[list[str]], str]:
+    """Command that installs phontrast into ``rscript``'s R, or ``None`` plus why not."""
+    if not rscript:
+        return None, ("R was not found, so phontrast cannot be installed. Install R from "
+                      "https://cloud.r-project.org (or point Vowelchemy at your R), then "
+                      "press Scan again.")
+    return [rscript, "-e", _INSTALL_R], ""
+
+
+# --------------------------------------------------------------------------- #
+# Running phontrast
+# --------------------------------------------------------------------------- #
 @dataclass
 class PhontrastResult:
     result: CommandResult
@@ -307,7 +602,8 @@ def run_phontrast(
     ``pillai_p_value``, ``bhatt_dist``, ``bhatt_affinity``,
     ``mahalanobis_dist``, ``percent_overlap`` …) plus ``vowel_a``/``vowel_b``,
     ``n_a``/``n_b``, the proportion-standardized Pillai fields and
-    ``pillai_null_p95``.
+    ``pillai_null_p95``.  With the default ``rscript`` the R that
+    :func:`phontrast_status` found is used.
     """
     keep = [c for c in [*features, category_col, group_col] if c and c in df.columns]
     subset = df[keep].dropna(subset=[c for c in features if c in df.columns]).copy()
@@ -335,7 +631,7 @@ def run_phontrast(
         notes.append(status.install_hint)
 
     result = run_streaming(
-        [rscript, str(script_path), str(in_csv), str(out_csv)],
+        [status.rscript_path, str(script_path), str(in_csv), str(out_csv)],
         on_output=on_output, timeout=timeout,
     )
     data = None

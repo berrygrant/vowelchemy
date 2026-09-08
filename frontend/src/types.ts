@@ -3,6 +3,20 @@ export interface ToolInfo {
   version: string | null
   hint: string
   path?: string | null
+  r_version?: string | null
+  library?: string | null
+  probing?: boolean
+}
+
+// One R installation found on the machine, probed for phontrast.
+export interface RCandidate {
+  path: string
+  r_version: string | null
+  library?: string | null
+  package: string | null
+  version: string | null
+  supported: boolean
+  in_use: boolean
 }
 
 export interface SeparationSettings {
@@ -55,15 +69,18 @@ export interface ToolEnvironment {
 export interface ToolInstallOption {
   possible: boolean
   reason: string
-  target?: 'app' | 'env'
+  target?: 'app' | 'env' | 'r'
   prefix?: string
   env_name?: string
+  path?: string | null
+  r_version?: string | null
 }
 
 export interface ToolsPayload {
-  tools: { mfa: ToolInfo; newfave: ToolInfo }
+  tools: { mfa: ToolInfo; newfave: ToolInfo; phontrast: ToolInfo }
   selected: string | null
   selected_locked?: boolean
+  r?: { selected: string | null; selected_locked?: boolean; candidates: RCandidate[] }
   install: Record<string, ToolInstallOption>
   app: AppInfo
   environments?: ToolEnvironment[]
