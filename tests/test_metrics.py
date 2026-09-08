@@ -204,8 +204,35 @@ def test_bootstrap_brackets_estimate_and_takes_sqrt_per_replicate():
     # the mean distance is at most the sqrt of the mean divergence.
     assert boot["js_distance_mean"] <= math.sqrt(boot["jsd_mean"]) + 1e-9
     assert boot["pillai_eq_n_boot"] > 0
+    assert boot["pillai_eq_fallback_rate"] == 0.0  # clearly separated: no fallbacks
     for col in ("pillai", "bhatt_affinity", "mahalanobis_dist", "percent_overlap"):
         assert not np.isnan(boot[f"{col}_ci_upper"])
+
+
+def test_pillai_eq_bootstrap_keeps_fallback_replicates_as_zero():
+    """Near merger most replicates hit the fallback; dropping them would bias the CI up."""
+    for seed in range(30):  # a merged, unbalanced sample whose point estimate is in fallback
+        rng = np.random.RandomState(seed)
+        a, b = rng.normal(0, 1, (25, 2)), rng.normal(0, 1, (95, 2))
+        if metrics.pair_metrics(a, b)["pillai_eq_fallback"]:
+            break
+    else:
+        pytest.fail("no fallback sample found")
+    boot = metrics.bootstrap_pair_metrics(a, b, n_boot=200, seed=1)
+    assert boot["pillai_eq_fallback_rate"] > 0.25
+    assert boot["pillai_eq_n_boot"] >= 150  # fallback replicates are kept (as 0), not dropped
+    assert boot["pillai_eq_ci_lower"] == 0.0
+    assert boot["pillai_eq_ci_upper"] < 0.3
+
+
+def test_bandwidth_bracket_columns():
+    df, schema = _demo_frame()
+    sep = metrics.pairwise_separation(df, schema, vowels=["AA", "AO"], group_by="Age Group")
+    assert {"jsd_bw_half", "jsd_bw_double"}.issubset(sep.columns)
+    # A wider kernel smooths the two vowels together: JSD falls as bandwidth grows.
+    assert (sep["jsd_bw_half"] >= sep["jsd_bw_double"] - 1e-9).all()
+    a, b = _cluster([0, 0], seed=1), _cluster([0.6, 0.6], seed=2)
+    assert metrics.jensen_shannon_divergence(a, b, bw_scale=0.5) > metrics.jensen_shannon_divergence(a, b, bw_scale=2.0)
 
 
 # --------------------------------------------------------------------------- #

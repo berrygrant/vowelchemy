@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../api'
-import type { Ctx, GroupingColumns, SeparationResult, VowelInfo } from '../types'
+import type { Ctx, GroupingColumns, SeparationResult, SeparationSettings, VowelInfo } from '../types'
 import { Button, Card, Field, LogBox, MultiSelect, Notice } from '../components/ui'
 import { DataTable } from '../components/DataTable'
 import { PlotlyChart } from '../components/PlotlyChart'
@@ -56,6 +56,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
   const [plotMetric, setPlotMetric] = useState('jsd')
   const [result, setResult] = useState<SeparationResult | null>(null)
   const { busy, error, setError, run } = useBusy()
+  const appliedSettings = useRef('')
 
   useEffect(() => {
     if (!loaded) return
@@ -70,6 +71,29 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
       }
     })()
   }, [loaded, setError])
+
+  // Mirror the session's stored separation settings (a loaded recipe, or the
+  // last computation) into the controls — once per distinct settings object,
+  // so edits the user hasn't computed yet are never overwritten.
+  useEffect(() => {
+    const s: SeparationSettings | null | undefined = ctx.status?.data.separation
+    if (!s) return
+    const key = JSON.stringify(s)
+    if (key === appliedSettings.current) return
+    appliedSettings.current = key
+    if (s.vowels?.length) setSelVowels(s.vowels)
+    setGroupBy(s.group_by ?? '')
+    const dimKey = Object.keys(DIMS).find((k) => JSON.stringify(DIMS[k]) === JSON.stringify(s.dims ?? null))
+    if (dimKey) setDimsOpt(dimKey)
+    if (s.engine === 'builtin' || (s.engine === 'phontrast' && phontrastOk)) setEngine(s.engine)
+    if (s.density) setDensity(s.density)
+    if (s.bw) setBw(s.bw)
+    if (s.min_tokens) setMinTokens(s.min_tokens)
+    setWithCI((s.bootstrap ?? 0) > 0)
+    if ((s.bootstrap ?? 0) > 0) setNBoot(s.bootstrap!)
+    setWithP((s.permutations ?? 0) > 0)
+    if (s.plot_metric) setPlotMetric(s.plot_metric)
+  }, [ctx.status, phontrastOk])
 
   const chooseEngine = (next: string) => {
     setEngine(next)

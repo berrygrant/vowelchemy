@@ -122,6 +122,9 @@ class Session:
     vowel_label_map: Optional[dict] = None
     selected_vowels: list = field(default_factory=list)
     filters: dict = field(default_factory=dict)
+    # Last separation-stage settings (vowels, group_by, density, bw, bootstrap …):
+    # what the CSV download reproduces and what the recipe records.
+    separation: dict = field(default_factory=dict)
     tracks_df: Optional[pd.DataFrame] = None
     tracks_schema: Optional[ColumnSchema] = None
 
@@ -347,6 +350,7 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
             "schema": s.schema.as_dict() if s.schema else {},
             "tracks_loaded": s.tracks_df is not None,
             "remove_outliers": s.remove_outliers,
+            "separation": s.separation or None,
         },
         "browse_confined": BROWSE_ROOT is not None,
         "tool_env": str(toolenv.selected_prefix()) if toolenv.selected_prefix() else None,
@@ -800,52 +804,81 @@ def figure_ridgeline(req: FigureRidgeRequest, x_vowelchemy_session: Optional[str
 _SEPARATION_SHOW = [
     "group_value", "vowel_a_label", "vowel_b_label", "n_a", "n_b",
     "jsd", "jsd_ci_lower", "jsd_ci_upper", "js_distance",
-    "pillai", "pillai_eq", "pillai_p_value", "pillai_perm_p", "pillai_null_p95",
-    "bhatt_affinity", "percent_overlap", "mahalanobis_dist", "verdict",
+    "pillai", "pillai_eq", "pillai_eq_fallback_rate", "pillai_p_value", "pillai_perm_p",
+    "pillai_null_p95", "bhatt_affinity", "percent_overlap", "mahalanobis_dist", "verdict",
 ]
+
+
+def _separation_settings(req: SeparationRequest) -> dict:
+    """Validated separation settings — stored on the session and in the recipe."""
+    return {
+        "vowels": list(req.vowels),
+        "group_by": req.group_by or None,
+        "dims": list(req.dims) if req.dims else None,
+        "engine": req.engine if req.engine in ("builtin", "phontrast") else "builtin",
+        "density": req.density if req.density in metrics.DENSITIES else "kde",
+        # The R engine accepts phontrast's selectors; the built-in one its own.
+        "bw": req.bw if req.bw in (*metrics.BANDWIDTHS, *phontrast.R_BANDWIDTHS) else "scott.diag",
+        "min_tokens": max(4, int(req.min_tokens)),
+        "bootstrap": max(0, int(req.bootstrap)),
+        "conf_level": min(0.999, max(0.5, float(req.conf_level))),
+        "permutations": max(0, int(req.permutations)),
+        "plot_metric": req.plot_metric if req.plot_metric in metrics.METRIC_COLUMNS else "jsd",
+    }
+
+
+def _run_separation(df: pd.DataFrame, schema: ColumnSchema, cfg: dict) -> pd.DataFrame:
+    """Built-in engine for the stored settings, with the verdict column added."""
+    bw = cfg.get("bw", "scott.diag")
+    sep = metrics.pairwise_separation(
+        df, schema, vowels=cfg.get("vowels") or None, group_by=cfg.get("group_by"),
+        dimensions=cfg.get("dims"), density=cfg.get("density", "kde"),
+        bw=bw if bw in metrics.BANDWIDTHS else "scott.diag",
+        min_tokens=int(cfg.get("min_tokens", metrics.MIN_TOKENS)),
+        bootstrap=int(cfg.get("bootstrap", 0)), conf_level=float(cfg.get("conf_level", 0.95)),
+        permutations=int(cfg.get("permutations", 0)),
+    )
+    if not sep.empty:
+        sep = sep.copy()
+        sep["verdict"] = sep["jsd"].map(jsd_verdict)
+    return sep
 
 
 @app.post("/api/separation")
 def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
-    df, schema, _ = _require_explore(session_for(x_vowelchemy_session))
-    density = req.density if req.density in metrics.DENSITIES else "kde"
-    bw = req.bw if req.bw in metrics.BANDWIDTHS else "scott.diag"
-    plot_metric = req.plot_metric if req.plot_metric in metrics.METRIC_COLUMNS else "jsd"
-    sep = metrics.pairwise_separation(
-        df, schema, vowels=req.vowels or None, group_by=req.group_by, dimensions=req.dims,
-        density=density, bw=bw, min_tokens=max(4, int(req.min_tokens)),
-        bootstrap=max(0, int(req.bootstrap)), conf_level=req.conf_level,
-        permutations=max(0, int(req.permutations)),
-    )
+    s = session_for(x_vowelchemy_session)
+    df, schema, _ = _require_explore(s)
+    cfg = _separation_settings(req)
+    s.separation = cfg
+    plot_metric = cfg["plot_metric"]
+    sep = _run_separation(df, schema, cfg)
     out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None,
-                 "phontrast": None, "plot_metric": plot_metric}
+                 "phontrast": None, "plot_metric": plot_metric, "settings": cfg}
     if not sep.empty:
-        sep = sep.copy()
-        sep["verdict"] = sep["jsd"].map(jsd_verdict)
         show = [c for c in _SEPARATION_SHOW if c in sep.columns and sep[c].notna().any()]
         out["builtin"] = df_payload(sep[show], limit=1000)
-        order = natural_order(df, req.group_by)
+        order = natural_order(df, cfg["group_by"])
         out["figure_bar"] = fig_json(viz.separation_bar(sep, metric=plot_metric,
                                                         group_order=order, dark=req.dark))
-        if req.group_by and sep["group_value"].notna().any():
+        if cfg["group_by"] and sep["group_value"].notna().any():
             lvl = (order or sorted(sep["group_value"].dropna().unique()))[0]
             out["figure_matrix"] = fig_json(viz.separation_matrix(
                 sep, metric=plot_metric, group_value=lvl, dark=req.dark))
         out["full_csv"] = sep.to_csv(index=False)
 
-    if req.engine == "phontrast":
+    if cfg["engine"] == "phontrast":
         pj = phontrast.phontrast_status(wait=True)
         if not pj.available:
             out["phontrast"] = {"error": "phontrast/R not available. " + pj.install_hint}
         else:
-            feats = req.dims or [c for c in ("F1_norm", "F2_norm") if c in df.columns]
-            subset = analysis.select_vowels(df, schema, req.vowels) if req.vowels else df
+            feats = cfg["dims"] or [c for c in ("F1_norm", "F2_norm") if c in df.columns]
+            subset = analysis.select_vowels(df, schema, cfg["vowels"]) if cfg["vowels"] else df
             log: list[str] = []
             res = phontrast.run_phontrast(
-                subset, features=feats, category_col="vowel_canon", group_col=req.group_by,
-                bw=req.bw if req.bw in phontrast.R_BANDWIDTHS else "Hpi", density=density,
-                min_tokens=max(4, int(req.min_tokens)), n_boot=max(0, int(req.bootstrap)),
-                conf_level=req.conf_level, on_output=log.append,
+                subset, features=feats, category_col="vowel_canon", group_col=cfg["group_by"],
+                bw=cfg["bw"] if cfg["bw"] in phontrast.R_BANDWIDTHS else "Hpi",
+                density=cfg["density"], min_tokens=cfg["min_tokens"], n_boot=cfg["bootstrap"],
+                conf_level=cfg["conf_level"], on_output=log.append,
             )
             out["phontrast"] = {
                 "ok": res.ok, "log": "\n".join(log), "notes": res.notes,
@@ -856,9 +889,11 @@ def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Hea
 
 @app.get("/api/separation/csv")
 def separation_csv(x_vowelchemy_session: Optional[str] = Header(default=None)):
+    """The full metrics table under the session's last separation settings."""
     s = session_for(x_vowelchemy_session)
     df, schema, _ = _require_explore(s)
-    sep = metrics.pairwise_separation(df, schema, vowels=s.selected_vowels or None)
+    cfg = s.separation or {"vowels": s.selected_vowels}
+    sep = _run_separation(df, schema, cfg)
     return Response(content=sep.to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=vowelchemy_separation.csv"})
 
@@ -868,7 +903,7 @@ def separation_csv(x_vowelchemy_session: Optional[str] = Header(default=None)):
 # --------------------------------------------------------------------------- #
 def build_recipe(s: Session) -> dict:
     return {
-        "version": 1,
+        "version": 2,  # 2: adds the separation-stage settings (v1 recipes still load)
         "corpus": {"audio_dir": s.audio_dir, "transcript_dir": s.transcript_dir,
                    "aligned_dir": s.aligned_dir, "speakers_path": s.speakers_path},
         "normalization": {"method": s.norm_method, "params": s.norm_params},
@@ -876,6 +911,7 @@ def build_recipe(s: Session) -> dict:
         "selected_vowels": s.selected_vowels,
         "filters": s.filters,
         "vowel_label_map": s.vowel_label_map,
+        "separation": s.separation or None,
     }
 
 
@@ -895,6 +931,11 @@ def apply_recipe(s: Session, r: dict) -> None:
     s.selected_vowels = r.get("selected_vowels", s.selected_vowels)
     s.filters = r.get("filters", s.filters)
     s.vowel_label_map = r.get("vowel_label_map", s.vowel_label_map)
+    sep = r.get("separation")
+    if isinstance(sep, dict):
+        s.separation = _separation_settings(SeparationRequest(**{
+            k: v for k, v in sep.items() if k in SeparationRequest.model_fields and v is not None
+        }))
 
 
 @app.get("/api/recipe")

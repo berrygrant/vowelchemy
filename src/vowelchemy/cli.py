@@ -188,12 +188,16 @@ def _cmd_separation(args: argparse.Namespace) -> int:
     if args.method != "none":
         df = norm.normalize(df, schema, method=args.method).data
     vowels = args.vowels.split(",") if args.vowels else None
-    sep = metrics.pairwise_separation(df, schema, vowels=vowels, group_by=args.group_by)
+    sep = metrics.pairwise_separation(
+        df, schema, vowels=vowels, group_by=args.group_by, density=args.density, bw=args.bw,
+        min_tokens=args.min_tokens, bootstrap=args.bootstrap, permutations=args.permutations,
+    )
     if sep.empty:
         print("No vowel pairs met the minimum token threshold.")
         return 0
     cols = ["group_value", "vowel_a", "vowel_b", "n_a", "n_b", "jsd", "js_distance",
-            "pillai", "pillai_eq", "pillai_p_value", "bhatt_affinity", "percent_overlap"]
+            "jsd_ci_lower", "jsd_ci_upper", "pillai", "pillai_eq", "pillai_p_value",
+            "pillai_perm_p", "bhatt_affinity", "percent_overlap"]
     print(sep[[c for c in cols if c in sep.columns]].to_string(index=False))
     if args.output:
         sep.to_csv(args.output, index=False)
@@ -358,13 +362,22 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("-o", "--output", default=None)
     n.set_defaults(func=_cmd_normalize)
 
-    s = sub.add_parser("separation", help="compute JSD separation metrics")
+    s = sub.add_parser("separation", help="compute separation metrics (phontrast port)")
     s.add_argument("vowels_csv")
     s.add_argument("--vowels", default=None, help="comma-separated vowels (ARPABET/keyword)")
     s.add_argument("--group-by", default=None, dest="group_by")
     s.add_argument("-m", "--method", default="lobanov", help="normalization before metrics")
     s.add_argument("-s", "--speakers", default=None)
-    s.add_argument("-o", "--output", default=None)
+    s.add_argument("--density", default="kde", choices=["kde", "mvnorm"],
+                   help="density behind JSD/overlap: kernel (default) or one Gaussian per vowel")
+    s.add_argument("--bw", default="scott.diag", choices=["scott.diag", "scott"],
+                   help="KDE bandwidth: phontrast's scott.diag (default) or full-covariance Scott")
+    s.add_argument("--min-tokens", default=20, type=int, dest="min_tokens",
+                   help="minimum tokens per pair, both vowels together (phontrast default 20)")
+    s.add_argument("--bootstrap", default=0, type=int, help="bootstrap replicates for CIs (0 = off)")
+    s.add_argument("--permutations", default=0, type=int,
+                   help="permutations for the Pillai permutation p-value (0 = off)")
+    s.add_argument("-o", "--output", default=None, help="write the full table (all columns) as CSV")
     s.set_defaults(func=_cmd_separation)
     return p
 

@@ -42,6 +42,14 @@ pair with replacement, every metric is recomputed per replicate (so
 ``js_distance`` is the square root *per replicate*, not of the mean), and
 percentile intervals are reported as ``<metric>_ci_lower`` / ``_ci_upper``.
 
+Two honest limits.  The balance correction exists only for Pillai: nothing
+published establishes how the kernel measures (``jsd``, ``js_distance``,
+``percent_overlap``) respond to the class ratio, so they are reported
+uncorrected (Berry, 2026b, declines to extend the result).  And kernel
+estimates depend on the bandwidth, so ``jsd_bw_half`` / ``jsd_bw_double``
+report the same JSD at half and double bandwidth — the bracket Berry (2026a)
+recommends reading kernel measures against, ordinally.
+
 References (full citations in ``docs/REFERENCES.md``): Lin (1991) for JSD;
 Endres & Schindelin (2003) and Fuglede & Topsøe (2004) for the distance;
 Pillai (1955), Hay, Warren & Drager (2006), Nycz & Hall-Lew (2013) for Pillai
@@ -154,12 +162,15 @@ def scott_bandwidth(x: np.ndarray) -> np.ndarray:
     return n ** (-2.0 / (d + 4)) * cov
 
 
-def _bandwidth(x: np.ndarray, bw: str) -> np.ndarray:
+def _bandwidth(x: np.ndarray, bw: str, scale: float = 1.0) -> np.ndarray:
+    """Bandwidth matrix for ``bw``; ``scale`` multiplies the bandwidth (so ``H`` by ``scale²``)."""
     if bw == "scott.diag":
-        return scott_diag_bandwidth(x)
-    if bw == "scott":
-        return scott_bandwidth(x)
-    raise ValueError(f"unknown bandwidth {bw!r}; choose from {BANDWIDTHS}")
+        H = scott_diag_bandwidth(x)
+    elif bw == "scott":
+        H = scott_bandwidth(x)
+    else:
+        raise ValueError(f"unknown bandwidth {bw!r}; choose from {BANDWIDTHS}")
+    return H * float(scale) ** 2
 
 
 def _kernel_at_origin(H: np.ndarray) -> float:
@@ -210,9 +221,9 @@ def _loo_logdens(log_dens: np.ndarray, n: int, kh0: float, alpha: float) -> np.n
     return out - math.log(n - alpha)
 
 
-def _mc_pair_kde(a: np.ndarray, b: np.ndarray, bw: str) -> dict:
+def _mc_pair_kde(a: np.ndarray, b: np.ndarray, bw: str, bw_scale: float = 1.0) -> dict:
     """Densities each category's KDE assigns to both samples (phontrast ``.kde_mc_pair``)."""
-    H1, H2 = _bandwidth(a, bw), _bandwidth(b, bw)
+    H1, H2 = _bandwidth(a, bw, bw_scale), _bandwidth(b, bw, bw_scale)
     return {
         "logp1": kde_log_density(a, a, H1), "logq1": kde_log_density(b, a, H2),
         "logp2": kde_log_density(a, b, H1), "logq2": kde_log_density(b, b, H2),
@@ -256,9 +267,9 @@ def _mc_pair_mvnorm(a: np.ndarray, b: np.ndarray, mc_n: int, seed: Optional[int]
 
 
 def _mc_pair(a: np.ndarray, b: np.ndarray, density: str, bw: str, mc_n: int,
-             seed: Optional[int]) -> Optional[dict]:
+             seed: Optional[int], bw_scale: float = 1.0) -> Optional[dict]:
     if density == "kde":
-        return _mc_pair_kde(a, b, bw)
+        return _mc_pair_kde(a, b, bw, bw_scale)
     if density == "mvnorm":
         return _mc_pair_mvnorm(a, b, mc_n, seed)
     raise ValueError(f"unknown density {density!r}; choose from {DENSITIES}")
@@ -301,6 +312,7 @@ def jensen_shannon_divergence(
     loo: bool = True,
     mc_n: int = MC_N,
     seed: Optional[int] = 0,
+    bw_scale: float = 1.0,
 ) -> float:
     """JSD (base 2, in ``[0, 1]``) between two point clouds; ``nan`` if too sparse.
 
@@ -308,13 +320,16 @@ def jensen_shannon_divergence(
     partial leave-one-out correction (``loo``); ``density="mvnorm"`` fits one
     Gaussian per category and draws ``mc_n`` fresh points from each instead
     (no correction needed).  Each category needs at least ``d + 1`` tokens.
+    ``bw_scale`` multiplies the KDE bandwidth — ``0.5`` / ``2`` give the
+    halved/doubled-bandwidth bracket Berry (2026a) recommends reading kernel
+    estimates against.
     """
     a, b = _clean(points_a), _clean(points_b)
     if a.shape[1] != b.shape[1]:
         raise ValueError("points_a and points_b must have the same number of columns")
     if min(len(a), len(b)) < kde_min_category_tokens(a.shape[1]):
         return float("nan")
-    mc = _mc_pair(a, b, density, bw, mc_n, seed)
+    mc = _mc_pair(a, b, density, bw, mc_n, seed, bw_scale)
     if mc is None:
         return float("nan")
     return _jsd_mc(mc, loo=loo and density == "kde")
@@ -598,6 +613,14 @@ def bootstrap_pair_metrics(
     ``conf_level`` are taken over the finite replicates.  Replicates in which a
     category drops below the KDE minimum are skipped, as phontrast skips
     replicates whose estimators error.  ``opts`` go to :func:`pair_metrics`.
+
+    ``pillai_eq`` (not bootstrapped by phontrast itself) needs one extra rule:
+    a replicate whose unbiased separation comes out negative has no
+    ``pillai_eq`` (the fallback case), and near merger that is the *majority*
+    of replicates.  Dropping them would condition the interval on the
+    correction succeeding and bias it upward, so such replicates count as
+    ``0`` — the balanced-design score at zero estimated separation — and
+    ``pillai_eq_fallback_rate`` reports what fraction they were.
     """
     a, b = _clean(points_a), _clean(points_b)
     d = a.shape[1]
@@ -607,6 +630,7 @@ def bootstrap_pair_metrics(
     n = len(pooled)
     rng = np.random.default_rng(seed)
     draws: dict[str, list[float]] = {m: [] for m in metrics}
+    fallback_n = 0
     if n >= 2 * floor:
         for _ in range(int(n_boot)):
             idx = rng.integers(0, n, n)
@@ -617,9 +641,15 @@ def bootstrap_pair_metrics(
             # Fresh Monte-Carlo draws per replicate (only matters for mvnorm).
             row = pair_metrics(ra, rb, **{**opts, "seed": int(rng.integers(0, 2**31 - 1))})
             for m in metrics:
-                draws[m].append(row.get(m, float("nan")))
+                v = row.get(m, float("nan"))
+                if m == "pillai_eq" and row.get("pillai_eq_fallback"):
+                    v, fallback_n = 0.0, fallback_n + 1
+                draws[m].append(v)
     alpha = 1.0 - conf_level
     out: dict = {"n_boot": int(n_boot), "conf_level": conf_level}
+    if "pillai_eq" in metrics:
+        usable = int(np.isfinite(np.asarray(draws["pillai_eq"], dtype=float)).sum())
+        out["pillai_eq_fallback_rate"] = fallback_n / usable if usable else float("nan")
     for m in metrics:
         vals = np.asarray([v for v in draws[m] if v is not None], dtype=float)
         vals = vals[np.isfinite(vals)]
@@ -681,6 +711,11 @@ def pair_separation(
     opts = dict(density=density, bw=bw, mc_n=mc_n)
     if dims:
         row.update(pair_metrics(a, b, seed=seed, **opts))
+        if density == "kde" and np.isfinite(row["jsd"]):
+            # Bandwidth sensitivity bracket (Berry 2026a): kernel estimates should
+            # be read ordinally against the same JSD at half and double bandwidth.
+            row["jsd_bw_half"] = jensen_shannon_divergence(a, b, bw=bw, bw_scale=0.5)
+            row["jsd_bw_double"] = jensen_shannon_divergence(a, b, bw=bw, bw_scale=2.0)
     else:
         row.update({"n_a": len(a), "n_b": len(b), "n_tokens": len(a) + len(b)})
     if dims and permutations > 0 and np.isfinite(row.get("pillai", float("nan"))):

@@ -42,7 +42,10 @@ GLOSSARY: list[dict] = [
                    "way phontrast does it (a Monte-Carlo plug-in on kernel densities with "
                    "a partial leave-one-out correction). Finite samples never reach "
                    "exactly 0: below ~25 tokens per vowel the floor sits noticeably above "
-                   "0, so read small values against N."},
+                   "0, so read small values against N. Kernel estimates also move with "
+                   "the bandwidth — jsd_bw_half / jsd_bw_double in the CSV show the same "
+                   "JSD at half and double bandwidth; trust orderings that survive that "
+                   "bracket. No balance correction exists for JSD (only for Pillai)."},
     {"term": "Jensen–Shannon distance (√JSD, js_distance)",
      "definition": "The square root of JSD. Unlike JSD it is a true distance metric "
                    "(it obeys the triangle inequality), which makes it the better number "
@@ -61,7 +64,11 @@ GLOSSARY: list[dict] = [
                    "squared Mahalanobis distance and Becker's correction. It is blank "
                    "(pillai_eq_fallback = True) when the corrected separation comes out "
                    "negative — which happens near merger — so a blank there is itself "
-                   "informative."},
+                   "informative. It runs slightly low in small, unbalanced, near-merged "
+                   "samples (the map is concave). In the bootstrap, replicates that hit "
+                   "the fallback count as 0 rather than being dropped, so the interval "
+                   "isn't conditioned on the correction succeeding; "
+                   "pillai_eq_fallback_rate says how many did."},
     {"term": "Pillai null threshold (pillai_null_p95)",
      "definition": "Stanley & Sneller's (2023) sample-size guide: the 95th-percentile "
                    "Pillai two *merged* vowels would produce with this many tokens "

@@ -5,6 +5,20 @@ export interface ToolInfo {
   path?: string | null
 }
 
+export interface SeparationSettings {
+  vowels?: string[]
+  group_by?: string | null
+  dims?: string[] | null
+  engine?: string
+  density?: string
+  bw?: string
+  min_tokens?: number
+  bootstrap?: number
+  conf_level?: number
+  permutations?: number
+  plot_metric?: string
+}
+
 export interface Status {
   tools: { mfa: ToolInfo; newfave: ToolInfo; phontrast: ToolInfo }
   data: {
@@ -15,6 +29,7 @@ export interface Status {
     schema: Record<string, string>
     tracks_loaded?: boolean
     remove_outliers?: boolean
+    separation?: SeparationSettings | null
   }
   browse_confined?: boolean
   tool_env?: string | null
@@ -118,6 +133,7 @@ export interface SeparationResult {
   figure_matrix: PlotlyFigure | null
   full_csv?: string
   plot_metric?: string
+  settings?: SeparationSettings
   phontrast: {
     ok?: boolean
     log?: string

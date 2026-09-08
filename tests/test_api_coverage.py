@@ -109,6 +109,30 @@ def test_separation_csv_download(client):
     res = client.get("/api/separation/csv", headers=h)
     assert res.status_code == 200
     assert b"jsd" in res.content and b"js_distance" in res.content and b"pillai_eq" in res.content
+    assert b"verdict" in res.content
+
+    # The download reproduces the last separation settings (grouping, bootstrap …)
+    # and the recipe records them (version 2).
+    client.post("/api/separation", json={"vowels": ["AA", "AO"], "group_by": "Age Group",
+                                         "bootstrap": 20, "density": "mvnorm"}, headers=h)
+    res = client.get("/api/separation/csv", headers=h)
+    head = res.content.decode().splitlines()[0].split(",")
+    assert "jsd_ci_lower" in head and "pillai_eq_fallback_rate" in head
+    assert res.content.count(b"Age Group") >= 3  # one row per age group
+    recipe = client.get("/api/recipe", headers=h).json()
+    assert recipe["version"] == 2
+    assert recipe["separation"]["bootstrap"] == 20 and recipe["separation"]["density"] == "mvnorm"
+    status = client.get("/api/status", headers=h).json()
+    assert status["data"]["separation"]["group_by"] == "Age Group"
+
+    # Loading a recipe restores the settings (unknown keys and nulls tolerated).
+    client.post("/api/recipe", json={"recipe": {"version": 2, "separation": {
+        "group_by": None, "bootstrap": 0, "bw": "scott", "plot_metric": "pillai_eq", "bogus": 1}}},
+                headers=h)
+    status = client.get("/api/status", headers=h).json()
+    assert status["data"]["separation"]["bw"] == "scott"
+    assert status["data"]["separation"]["plot_metric"] == "pillai_eq"
+    assert status["data"]["separation"]["group_by"] is None
 
 
 def test_vowelmap_upload(client):

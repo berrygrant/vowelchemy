@@ -141,7 +141,11 @@ mergers in apparent time. Bootstrap CIs are available for every metric.
 The built-in engine is a Python port of the estimators in
 [phontrast](https://github.com/berrygrant/phontrast) 2.4.1 (Monte-Carlo
 plug-in JSD on kernel densities with phontrast's partial leave-one-out
-correction, same column names), so the stage always works. If R and phontrast
+correction, same column names), so the stage always works. Column names
+follow phontrast (`jsd`, `js_distance`, `pillai`, `pillai_eq`, `pillai_p_value`,
+`bhatt_affinity`, `percent_overlap`, …); CSVs from earlier Vowelchemy releases
+used `JSD`, `JSD_lo`/`JSD_hi`, `Pillai`, `Pillai_p` and `Bhattacharyya_overlap`,
+and the minimum tokens per pair moved from 5 to phontrast's 20. If R and phontrast
 (≥ 2.3.1) are installed, Vowelchemy can instead drive the package itself —
 `phontrast()` plus `pillai_overlap(proportion_standardized = TRUE)` for every
 vowel pair — and return its table:

@@ -17,7 +17,10 @@ categories (phontrast compares exactly two) the generated script runs::
     pillai_overlap(data, features, category_col, proportion_standardized = TRUE)
 
 and binds the proportion-standardized Pillai fields (``pillai_eq`` …) onto
-phontrast's wide table, which ``phontrast()`` itself does not return.
+phontrast's wide table, which ``phontrast()`` itself does not return.  One
+naming asymmetry to know about: in this table ``group`` holds the group
+*level* (phontrast's convention), whereas the built-in engine's table has
+``group`` = the grouping column's name and ``group_value`` = the level.
 
 When R is unavailable, :mod:`vowelchemy.metrics` is a native port of the same
 estimators (same column names), so the app works everywhere — see
