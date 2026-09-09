@@ -4,6 +4,7 @@
     python scripts/bump_version.py 0.3.3          # rewrite every declaration
     python scripts/bump_version.py --check        # do they all agree?
     python scripts/bump_version.py --check v0.3.3 # …and match this release tag?
+    python scripts/bump_version.py --print        # the declared version (for CI)
 
 The version lives in four places: ``pyproject.toml`` (pip and the packaged
 app), ``CITATION.cff`` (GitHub's "Cite this repository"; its release date is
@@ -112,8 +113,19 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("version", nargs="?", help="new version, e.g. 0.3.3")
     parser.add_argument("--check", nargs="?", const=True, metavar="TAG",
                         help="verify the declarations agree (and match TAG, e.g. v0.3.3)")
+    parser.add_argument("--print", action="store_true", dest="print_version",
+                        help="print the declared version (after checking it agrees) and exit")
     parser.add_argument("--root", type=Path, default=ROOT, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
+
+    if args.print_version:
+        problems = check(args.root)
+        if problems:
+            for p in problems:
+                print(f"error: {p}", file=sys.stderr)
+            return 1
+        print(next(v for v in read_versions(args.root).values() if v))
+        return 0
 
     if args.check is not None:
         tag = None if args.check is True else args.check
@@ -139,10 +151,9 @@ def main(argv: list[str] | None = None) -> int:
     if not changed:
         print(f"already at {args.version}")
     print(
-        f"\nNext:\n  git commit -am 'Bump version to {args.version}'\n"
-        f"  git tag v{args.version} && git push origin main v{args.version}\n"
-        "The tag builds the desktop apps and publishes the GitHub release the "
-        "in-app update check reads."
+        f"\nNext:\n  git commit -am 'Bump version to {args.version}' && git push\n"
+        f"Once that lands on main, the 'Release on version bump' action tags v{args.version}, "
+        "builds the desktop apps and publishes the GitHub release the in-app update check reads."
     )
     return 0
 

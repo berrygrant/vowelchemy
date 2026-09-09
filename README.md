@@ -77,7 +77,8 @@ when one is out (one anonymous check of GitHub's releases per session, silent
 offline; set `VOWELCHEMY_NO_UPDATE_CHECK=1` to turn it off). In a terminal,
 `vowelchemy --version` and `vowelchemy doctor` report the same. (Maintainers:
 [`docs/RELEASING.md`](docs/RELEASING.md) — one script bumps the version
-everywhere and the release build checks the tag against it.)
+everywhere, and pushing that commit to `main` tags, builds and publishes the
+release automatically.)
 
 ---
 
