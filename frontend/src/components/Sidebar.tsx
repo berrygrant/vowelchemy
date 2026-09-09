@@ -125,6 +125,17 @@ export function Sidebar({ stage, ctx }: { stage: Stage; ctx: Ctx }) {
       <button className="btn btn-small side-help" onClick={() => setShowGlossary(true)}>
         ❔ Glossary &amp; help
       </button>
+      <div className="side-version muted small" title={status?.update?.hint ?? ''}>
+        Vowelchemy {status?.app?.version ?? ''}
+        {status?.update?.update_available && (
+          <>
+            {' · '}
+            <a href={status.update.url} target="_blank" rel="noreferrer">
+              {status.update.latest} available ↗
+            </a>
+          </>
+        )}
+      </div>
       {showGlossary && <GlossaryDrawer onClose={() => setShowGlossary(false)} />}
       {showTools && <ToolsPanel ctx={ctx} onClose={() => setShowTools(false)} />}
     </aside>

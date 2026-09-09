@@ -72,6 +72,11 @@ fall from ~0.97 (older) to ~0.08 (younger).
 walkthrough for undergraduates: a demo warm-up, then a complete real-corpus
 study from question to write-up.
 
+The sidebar shows which version you are running and links to a newer release
+when one is out (one anonymous check of GitHub's releases per session, silent
+offline; set `VOWELCHEMY_NO_UPDATE_CHECK=1` to turn it off). In a terminal,
+`vowelchemy --version` and `vowelchemy doctor` report the same.
+
 ---
 
 ## The pipeline, stage by stage

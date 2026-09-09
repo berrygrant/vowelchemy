@@ -49,6 +49,19 @@ export interface Status {
   tool_env?: string | null
   app?: AppInfo
   probing?: boolean
+  update?: UpdateInfo
+}
+
+// Result of the once-per-session check against GitHub's releases.
+export interface UpdateInfo {
+  current: string
+  latest: string | null
+  url: string
+  update_available: boolean
+  checked: boolean
+  error?: string | null
+  disabled?: boolean
+  hint?: string
 }
 
 export interface AppInfo {

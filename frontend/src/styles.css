@@ -504,6 +504,14 @@ input[type='file'] {
   flex: 1;
 }
 
+.side-version {
+  margin-top: 10px;
+  text-align: center;
+}
+.side-version a {
+  font-weight: 600;
+}
+
 /* Modals (folder picker, glossary, tools). Rendered into <body> through a
    portal and stacked above Plotly's modebar (z-index 1001), which otherwise
    pokes through the backdrop. */

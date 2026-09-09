@@ -20,6 +20,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import __version__
 from .constants import DEFAULT_ACOUSTIC_MODEL, DEFAULT_DICTIONARY
 
 
@@ -56,9 +57,18 @@ def _cmd_app(args: argparse.Namespace) -> int:
               "      Build it with:  vowelchemy setup\n"
               "      or run the dev server:  cd frontend && npm run dev\n", file=sys.stderr)
     url = f"http://127.0.0.1:{port}"
-    print(f"Vowelchemy running at {url}  (API under /api; Ctrl+C to stop)")
+    print(f"Vowelchemy {__version__} running at {url}  (API under /api; Ctrl+C to stop)")
     if not args.no_browser:
         threading.Thread(target=_open_when_ready, args=(url,), daemon=True).start()
+
+    def announce_update() -> None:  # off the startup path; silent unless there is news
+        from . import updates
+
+        info = updates.cached_update_check(wait=True)
+        if info.update_available:
+            print(f"\n✨ {updates.update_hint(info)}\n", flush=True)
+
+    threading.Thread(target=announce_update, daemon=True).start()
     cmd = [sys.executable, "-m", "uvicorn", "vowelchemy.api:app",
            "--host", "127.0.0.1", "--port", str(port)]
     if args.reload:
@@ -76,11 +86,12 @@ def _tool_detail(status) -> str:
 
 def _cmd_doctor(args: argparse.Namespace) -> int:
     """Report what is installed and where — the first thing to run when stuck."""
-    from . import alignment, extraction, phontrast, toolenv
+    from . import alignment, extraction, phontrast, toolenv, updates
 
     info = toolenv.app_info()
     print("Vowelchemy")
     print(f"  version   : {info['version']}")
+    print(f"  updates   : {updates.update_hint(updates.cached_update_check(wait=True))}")
     print(f"  code      : {info['location']}")
     print(f"  python    : {info['python']} ({info['executable']})")
     print(f"  UI bundle : {info['webui'] or 'NOT BUILT (API only) — run: vowelchemy setup'}")
@@ -318,6 +329,7 @@ def _cmd_extract(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="vowelchemy", description=__doc__.splitlines()[0])
+    p.add_argument("--version", action="version", version=f"vowelchemy {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
 
     a = sub.add_parser("app", help="launch the API + React app (uvicorn)")

@@ -24,6 +24,12 @@ def test_status_reports_tools_and_empty_data(client):
     for tool in ("mfa", "newfave", "phontrast"):
         assert isinstance(body["tools"][tool]["available"], bool)
     assert body["data"]["loaded"] is False
+    # The app reports its version and the outcome of the update check.
+    from vowelchemy import __version__
+
+    assert body["app"]["version"] == __version__
+    assert body["update"]["current"] == __version__ and body["update"]["disabled"] is True
+    assert body["update"]["hint"]
 
 
 def test_demo_then_dataset_and_csv(client):

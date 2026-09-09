@@ -391,6 +391,18 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
                 Running Vowelchemy {data.app.version} · Python {data.app.python}
                 <br />
                 <span className="mono">{data.app.location}</span>
+                {ctx.status?.update?.hint && (
+                  <>
+                    <br />
+                    {ctx.status.update.update_available ? (
+                      <a href={ctx.status.update.url} target="_blank" rel="noreferrer">
+                        {ctx.status.update.hint}
+                      </a>
+                    ) : (
+                      ctx.status.update.hint
+                    )}
+                  </>
+                )}
               </div>
             )}
           </div>

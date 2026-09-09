@@ -43,7 +43,7 @@ from . import (
     trajectories,
     visualization as viz,
 )
-from . import __version__
+from . import __version__, updates
 from .constants import (
     ARPABET_VOWELS,
     DEFAULT_ACOUSTIC_MODEL,
@@ -87,6 +87,10 @@ def _warm_now() -> None:
             probe(wait=True)
         except Exception:  # a broken tool must never stop the server
             pass
+    try:
+        updates.cached_update_check(wait=True)  # one anonymous GitHub request, offline-safe
+    except Exception:
+        pass
 
 # Optional confinement root for the folder browser (local-tool security).
 BROWSE_ROOT: Optional[str] = os.environ.get("VOWELCHEMY_BROWSE_ROOT") or None
@@ -395,6 +399,7 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
         # A tool look-up is still running (R takes a moment at startup); the UI
         # polls quickly until this clears so the sidebar dots settle on their own.
         "probing": pj.probing,
+        "update": updates.cached_update_check().as_dict(),
     }
 
 
