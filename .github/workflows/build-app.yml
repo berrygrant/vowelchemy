@@ -33,6 +33,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      # A tag that does not match the declared version would ship an app that
+      # announces its own release as an available update. Fail here, before
+      # the (slow) builds, with the command that fixes it.
+      - name: Check the tag matches the declared version
+        if: startsWith(github.ref, 'refs/tags/')
+        run: python scripts/bump_version.py --check "$GITHUB_REF_NAME"
+        shell: bash
       - name: Install
         run: pip install . "pyinstaller>=6"
       - name: Build
