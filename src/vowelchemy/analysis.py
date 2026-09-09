@@ -153,6 +153,33 @@ def select_vowels(
     return df[canonical_vowel_series(df, schema).isin(wanted)].copy()
 
 
+# Joins the levels of several grouping columns into one label ("F · Older").
+GROUP_SEP = " · "
+
+
+def combined_group(
+    df: pd.DataFrame, columns: Sequence[str], name: Optional[str] = None
+) -> tuple[pd.DataFrame, str]:
+    """Add one column that crosses several grouping columns, e.g. Sex × Age Group.
+
+    Every plot and metric groups by a single column; to split by two factors
+    at once the levels are joined with :data:`GROUP_SEP` (``"F · Older"``) in
+    a new column named ``"Sex × Age Group"`` (or ``name``).  A row missing any
+    of the factors gets a missing combined label, so it drops out of grouped
+    views the way it would for a single factor.  Returns ``(frame, column)``.
+    """
+    cols = [c for c in columns if c in df.columns]
+    if not cols:
+        raise ValueError("combined_group needs at least one column present in the frame")
+    name = name or " × ".join(cols)
+    out = df.copy()
+    label = out[cols[0]].astype("string")
+    for c in cols[1:]:
+        label = label + GROUP_SEP + out[c].astype("string")
+    out[name] = label.astype(object).where(label.notna(), np.nan)
+    return out, name
+
+
 def candidate_grouping_columns(
     df: pd.DataFrame, schema: ColumnSchema, max_cardinality: int = 30
 ) -> list[str]:

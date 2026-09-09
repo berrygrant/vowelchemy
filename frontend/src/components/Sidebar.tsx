@@ -36,7 +36,9 @@ function ToolRow({
     >
       <span className={`dot ${ok ? 'dot-on' : ''}`} />
       <span className="tool-name">{name}</span>
-      <span className="tool-ver">{ok ? info?.version ?? 'ready' : absentNote ?? 'set up…'}</span>
+      <span className="tool-ver">
+        {ok ? info?.version ?? 'ready' : info?.probing ? 'checking…' : absentNote ?? 'set up…'}
+      </span>
     </div>
   )
 }

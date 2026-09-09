@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { GlossaryTerm } from '../types'
+import { Portal } from './ui'
 
 interface Reference {
   work: string
@@ -20,6 +21,7 @@ export function GlossaryDrawer({ onClose }: { onClose: () => void }) {
       .catch(() => {})
   }, [])
   return (
+    <Portal>
     <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label="Glossary">
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -55,5 +57,6 @@ export function GlossaryDrawer({ onClose }: { onClose: () => void }) {
         </div>
       </div>
     </div>
+    </Portal>
   )
 }

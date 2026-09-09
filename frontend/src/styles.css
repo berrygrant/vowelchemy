@@ -504,14 +504,16 @@ input[type='file'] {
   flex: 1;
 }
 
-/* Folder picker modal */
+/* Modals (folder picker, glossary, tools). Rendered into <body> through a
+   portal and stacked above Plotly's modebar (z-index 1001), which otherwise
+   pokes through the backdrop. */
 .modal-backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
   display: grid;
   place-items: center;
-  z-index: 50;
+  z-index: 2000;
   padding: 20px;
 }
 .modal {

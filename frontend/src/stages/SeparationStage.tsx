@@ -44,7 +44,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
   const [vowels, setVowels] = useState<VowelInfo[]>([])
   const [grouping, setGrouping] = useState<GroupingColumns | null>(null)
   const [selVowels, setSelVowels] = useState<string[]>([])
-  const [groupBy, setGroupBy] = useState('')
+  const [groupBys, setGroupBys] = useState<string[]>([])  // several columns are crossed
   const [dimsOpt, setDimsOpt] = useState('F1 × F2')
   const [engine, setEngine] = useState('builtin')
   const [density, setDensity] = useState('kde')
@@ -82,7 +82,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
     if (key === appliedSettings.current) return
     appliedSettings.current = key
     if (s.vowels?.length) setSelVowels(s.vowels)
-    setGroupBy(s.group_by ?? '')
+    setGroupBys(Array.isArray(s.group_by) ? s.group_by : s.group_by ? [s.group_by] : [])
     const dimKey = Object.keys(DIMS).find((k) => JSON.stringify(DIMS[k]) === JSON.stringify(s.dims ?? null))
     if (dimKey) setDimsOpt(dimKey)
     if (s.engine === 'builtin' || (s.engine === 'phontrast' && phontrastOk)) setEngine(s.engine)
@@ -104,7 +104,7 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
     run(async () => {
       const res = (await api.post('/api/separation', {
         vowels: selVowels,
-        group_by: groupBy || null,
+        group_by: groupBys.length ? groupBys : null,
         dims: DIMS[dimsOpt],
         engine,
         density,
@@ -158,15 +158,17 @@ export function SeparationStage({ ctx }: { ctx: Ctx }) {
             onChange={setSelVowels}
           />
         </Field>
+        <Field
+          label="Compute within each level of (none = whole dataset)"
+          hint="pick two or more to cross them, e.g. Sex × Age Group"
+        >
+          <MultiSelect
+            options={demoCols.map((c) => ({ value: c, label: c }))}
+            selected={groupBys}
+            onChange={setGroupBys}
+          />
+        </Field>
         <div className="grid-3">
-          <Field label="Compute within each level of">
-            <select value={groupBy} onChange={(e) => setGroupBy(e.target.value)}>
-              <option value="">— whole dataset —</option>
-              {demoCols.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </Field>
           <Field label="Space">
             <select value={dimsOpt} onChange={(e) => setDimsOpt(e.target.value)}>
               {Object.keys(DIMS).map((k) => (

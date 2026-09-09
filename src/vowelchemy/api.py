@@ -21,7 +21,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Union
 
 import pandas as pd
 from fastapi import FastAPI, File, Header, HTTPException, UploadFile
@@ -198,6 +198,36 @@ def natural_order(df: pd.DataFrame, col: Optional[str]):
     return [k for k in NATURAL_ORDER if k in vals] + [v for v in sorted(vals) if v not in NATURAL_ORDER]
 
 
+def _as_columns(spec) -> list[str]:
+    """A grouping spec (one column, a list of columns, or nothing) as a list."""
+    if spec is None:
+        return []
+    if isinstance(spec, str):
+        return [spec] if spec else []
+    return [c for c in spec if c]
+
+
+def _group_column(df: pd.DataFrame, spec) -> tuple[pd.DataFrame, Optional[str], Optional[list]]:
+    """Resolve one or several grouping columns to a single column plus level order.
+
+    Several columns become one combined column (``"Sex × Age Group"``, levels
+    ``"F · Older"`` …) via :func:`analysis.combined_group`; its level order
+    nests the natural order of each factor (Sex within Age Group).
+    """
+    import itertools
+
+    cols = [c for c in _as_columns(spec) if c in df.columns]
+    if not cols:
+        return df, None, None
+    if len(cols) == 1:
+        return df, cols[0], natural_order(df, cols[0])
+    orders = [natural_order(df, c) or [] for c in cols]
+    out, name = analysis.combined_group(df, cols)
+    present = set(out[name].dropna().astype(str))
+    order = [analysis.GROUP_SEP.join(combo) for combo in itertools.product(*orders)]
+    return out, name, [o for o in order if o in present]
+
+
 def df_payload(df: pd.DataFrame, limit: int = 500) -> dict:
     preview = df.head(limit)
     return {
@@ -266,17 +296,23 @@ class DatasetRequest(BaseModel):
     outlier_sd: float = 2.5
 
 
+# Grouping fields take one column or several: several are crossed into one
+# combined factor ("Sex × Age Group" with levels "F · Older" …).
+GroupSpec = Union[str, list[str]]
+
+
 class FigureCrossRequest(BaseModel):
     formant: str = "F1_norm"
-    x: str = "Age Group"
-    split: Optional[str] = "vowel_label"
+    x: GroupSpec = "Age Group"
+    split: Optional[GroupSpec] = "vowel_label"
+    facet: Optional[GroupSpec] = None  # one panel per level, e.g. Sex
     kind: str = "violin"
     vowels: Optional[list[str]] = None
     dark: bool = False
 
 
 class FigureSpaceRequest(BaseModel):
-    color: str = "vowel_canon"
+    color: GroupSpec = "vowel_canon"
     show_tokens: bool = True
     vowels: Optional[list[str]] = None
     mode: str = "scatter"  # scatter | contour | ellipse
@@ -286,14 +322,14 @@ class FigureSpaceRequest(BaseModel):
 
 class FigureRidgeRequest(BaseModel):
     value: str = "F1_norm"
-    group: str = "Age Group"
+    group: GroupSpec = "Age Group"
     vowels: Optional[list[str]] = None
     dark: bool = False
 
 
 class SeparationRequest(BaseModel):
     vowels: list[str] = []
-    group_by: Optional[str] = None
+    group_by: Optional[GroupSpec] = None
     dims: Optional[list[str]] = None
     engine: str = "builtin"  # "builtin" | "phontrast"
     density: str = "kde"  # phontrast `density`: "kde" | "mvnorm"
@@ -356,6 +392,9 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
         "browse_confined": BROWSE_ROOT is not None,
         "tool_env": str(toolenv.selected_prefix()) if toolenv.selected_prefix() else None,
         "app": toolenv.app_info(),
+        # A tool look-up is still running (R takes a moment at startup); the UI
+        # polls quickly until this clears so the sidebar dots settle on their own.
+        "probing": pj.probing,
     }
 
 
@@ -828,7 +867,12 @@ def figure_vowel_space(req: FigureSpaceRequest, x_vowelchemy_session: Optional[s
     df = _apply_vowels(df, schema, req.vowels)
     x = "F2_norm" if "F2_norm" in df.columns else schema.f2
     y = "F1_norm" if "F1_norm" in df.columns else schema.f1
-    fig = viz.vowel_space(df, x=x, y=y, color=req.color, show_tokens=req.show_tokens,
+    df, color, order = _group_column(df, req.color)
+    if color is None:
+        raise HTTPException(status_code=400, detail="Pick at least one column to colour by.")
+    combined = len(_as_columns(req.color)) > 1
+    fig = viz.vowel_space(df, x=x, y=y, color=color, show_tokens=req.show_tokens,
+                          category_order=order if combined else None,
                           mode=req.mode, max_points=req.max_points, dark=req.dark)
     return fig_json(fig)
 
@@ -837,8 +881,15 @@ def figure_vowel_space(req: FigureSpaceRequest, x_vowelchemy_session: Optional[s
 def figure_cross(req: FigureCrossRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     df, schema, _ = _require_explore(session_for(x_vowelchemy_session))
     df = _apply_vowels(df, schema, req.vowels)
-    fig = viz.formant_cross(df, formant=req.formant, x=req.x, color=req.split, kind=req.kind,
-                            dark=req.dark, x_order=natural_order(df, req.x))
+    df, x, x_order = _group_column(df, req.x)
+    if x is None:
+        raise HTTPException(status_code=400, detail="Pick at least one column for the x axis.")
+    df, split, split_order = _group_column(df, req.split)
+    df, facet, facet_order = _group_column(df, req.facet)
+    fig = viz.formant_cross(df, formant=req.formant, x=x, color=split, kind=req.kind,
+                            facet=facet, dark=req.dark, x_order=x_order,
+                            color_order=split_order if len(_as_columns(req.split)) > 1 else None,
+                            facet_order=facet_order)
     return fig_json(fig)
 
 
@@ -846,8 +897,10 @@ def figure_cross(req: FigureCrossRequest, x_vowelchemy_session: Optional[str] = 
 def figure_ridgeline(req: FigureRidgeRequest, x_vowelchemy_session: Optional[str] = Header(default=None)):
     df, schema, _ = _require_explore(session_for(x_vowelchemy_session))
     df = _apply_vowels(df, schema, req.vowels)
-    fig = viz.ridgeline(df, value=req.value, group=req.group, dark=req.dark,
-                        group_order=natural_order(df, req.group))
+    df, group, order = _group_column(df, req.group)
+    if group is None:
+        raise HTTPException(status_code=400, detail="Pick at least one column to group by.")
+    fig = viz.ridgeline(df, value=req.value, group=group, dark=req.dark, group_order=order)
     return fig_json(fig)
 
 
@@ -867,7 +920,7 @@ def _separation_settings(req: SeparationRequest) -> dict:
     """Validated separation settings — stored on the session and in the recipe."""
     return {
         "vowels": list(req.vowels),
-        "group_by": req.group_by or None,
+        "group_by": _as_columns(req.group_by) or None,  # several columns are crossed
         "dims": list(req.dims) if req.dims else None,
         "engine": req.engine if req.engine in ("builtin", "phontrast") else "builtin",
         "density": req.density if req.density in metrics.DENSITIES else "kde",
@@ -881,11 +934,16 @@ def _separation_settings(req: SeparationRequest) -> dict:
     }
 
 
-def _run_separation(df: pd.DataFrame, schema: ColumnSchema, cfg: dict) -> pd.DataFrame:
-    """Built-in engine for the stored settings, with the verdict column added."""
+def _run_separation(df: pd.DataFrame, schema: ColumnSchema, cfg: dict) -> tuple[pd.DataFrame, pd.DataFrame, Optional[str], Optional[list]]:
+    """Built-in engine for the stored settings, with the verdict column added.
+
+    Returns ``(table, frame, group_column, level_order)`` — the frame carries
+    the combined grouping column when several were crossed.
+    """
     bw = cfg.get("bw", "scott.diag")
+    df, group_col, order = _group_column(df, cfg.get("group_by"))
     sep = metrics.pairwise_separation(
-        df, schema, vowels=cfg.get("vowels") or None, group_by=cfg.get("group_by"),
+        df, schema, vowels=cfg.get("vowels") or None, group_by=group_col,
         dimensions=cfg.get("dims"), density=cfg.get("density", "kde"),
         bw=bw if bw in metrics.BANDWIDTHS else "scott.diag",
         min_tokens=int(cfg.get("min_tokens", metrics.MIN_TOKENS)),
@@ -895,7 +953,7 @@ def _run_separation(df: pd.DataFrame, schema: ColumnSchema, cfg: dict) -> pd.Dat
     if not sep.empty:
         sep = sep.copy()
         sep["verdict"] = sep["jsd"].map(jsd_verdict)
-    return sep
+    return sep, df, group_col, order
 
 
 @app.post("/api/separation")
@@ -905,17 +963,16 @@ def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Hea
     cfg = _separation_settings(req)
     s.separation = cfg
     plot_metric = cfg["plot_metric"]
-    sep = _run_separation(df, schema, cfg)
+    sep, df, group_col, order = _run_separation(df, schema, cfg)
     out: dict = {"builtin": None, "figure_bar": None, "figure_matrix": None,
                  "phontrast": None, "plot_metric": plot_metric, "settings": cfg}
     if not sep.empty:
         show = [c for c in _SEPARATION_SHOW if c in sep.columns and sep[c].notna().any()]
         out["builtin"] = df_payload(sep[show], limit=1000)
-        order = natural_order(df, cfg["group_by"])
         out["figure_bar"] = fig_json(viz.separation_bar(sep, metric=plot_metric,
                                                         group_order=order, dark=req.dark))
-        if cfg["group_by"] and sep["group_value"].notna().any():
-            lvl = (order or sorted(sep["group_value"].dropna().unique()))[0]
+        if group_col and sep["group_value"].notna().any():
+            lvl = (order or sorted(sep["group_value"].dropna().astype(str).unique()))[0]
             out["figure_matrix"] = fig_json(viz.separation_matrix(
                 sep, metric=plot_metric, group_value=lvl, dark=req.dark))
         out["full_csv"] = sep.to_csv(index=False)
@@ -929,7 +986,7 @@ def separation(req: SeparationRequest, x_vowelchemy_session: Optional[str] = Hea
             subset = analysis.select_vowels(df, schema, cfg["vowels"]) if cfg["vowels"] else df
             log: list[str] = []
             res = phontrast.run_phontrast(
-                subset, features=feats, category_col="vowel_canon", group_col=cfg["group_by"],
+                subset, features=feats, category_col="vowel_canon", group_col=group_col,
                 bw=cfg["bw"] if cfg["bw"] in phontrast.R_BANDWIDTHS else "Hpi",
                 density=cfg["density"], min_tokens=cfg["min_tokens"], n_boot=cfg["bootstrap"],
                 conf_level=cfg["conf_level"], on_output=log.append,
@@ -947,7 +1004,7 @@ def separation_csv(x_vowelchemy_session: Optional[str] = Header(default=None)):
     s = session_for(x_vowelchemy_session)
     df, schema, _ = _require_explore(s)
     cfg = s.separation or {"vowels": s.selected_vowels}
-    sep = _run_separation(df, schema, cfg)
+    sep, _, _, _ = _run_separation(df, schema, cfg)
     return Response(content=sep.to_csv(index=False), media_type="text/csv",
                     headers={"Content-Disposition": "attachment; filename=vowelchemy_separation.csv"})
 

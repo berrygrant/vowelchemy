@@ -102,6 +102,25 @@ def test_figure_ridgeline(client):
     assert len(fig["data"]) >= 3  # one density per age group
 
 
+def test_combined_group_crosses_factors():
+    import numpy as np
+    import pandas as pd
+
+    from vowelchemy import analysis
+
+    df = pd.DataFrame({"Sex": ["F", "M", "F", None], "Age Group": ["Older", "Older", "Young", "Young"],
+                       "year": [1990, 1991, 1990, 1992]})
+    out, name = analysis.combined_group(df, ["Sex", "Age Group"])
+    assert name == "Sex × Age Group"
+    assert out[name].tolist()[:3] == ["F · Older", "M · Older", "F · Young"]
+    assert np.isnan(out[name].iloc[3])  # a missing factor → missing combined label
+    out, name = analysis.combined_group(df, ["Age Group", "year"], name="cohort")
+    assert name == "cohort" and out["cohort"].iloc[0] == "Older · 1990"
+    assert "Sex × Age Group" not in df.columns  # the input frame is untouched
+    with pytest.raises(ValueError):
+        analysis.combined_group(df, ["nope"])
+
+
 def test_tools_panel_can_point_at_an_r(client, tmp_path, monkeypatch):
     import stat
 
@@ -154,7 +173,17 @@ def test_separation_csv_download(client):
     assert recipe["version"] == 2
     assert recipe["separation"]["bootstrap"] == 20 and recipe["separation"]["density"] == "mvnorm"
     status = client.get("/api/status", headers=h).json()
-    assert status["data"]["separation"]["group_by"] == "Age Group"
+    assert status["data"]["separation"]["group_by"] == ["Age Group"]
+    assert isinstance(status["probing"], bool)
+
+    # Two grouping columns are crossed: one row per vowel pair × Sex · Age Group.
+    crossed = client.post("/api/separation", json={"vowels": ["AA", "AO"],
+                                                   "group_by": ["Sex", "Age Group"]}, headers=h).json()
+    levels = [r["group_value"] for r in crossed["builtin"]["records"]]
+    assert len(levels) == 6 and "F · Older" in levels
+    assert crossed["settings"]["group_by"] == ["Sex", "Age Group"]
+    csv = client.get("/api/separation/csv", headers=h).content.decode()
+    assert "Sex × Age Group" in csv.splitlines()[1] and "M · Young" in csv
 
     # Loading a recipe restores the settings (unknown keys and nulls tolerated).
     client.post("/api/recipe", json={"recipe": {"version": 2, "separation": {

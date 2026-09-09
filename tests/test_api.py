@@ -69,6 +69,34 @@ def test_figures_return_plotly_json(client):
     space = client.post("/api/figure/vowel-space", json={"color": "vowel_canon"}, headers=h).json()
     assert len(space["data"]) > 0
 
+    # Several grouping columns are crossed into one factor ("F · Older"), and
+    # the cross builder can facet by another column (one panel per level).
+    crossed = client.post(
+        "/api/figure/cross",
+        json={"formant": "F1_norm", "x": ["Sex", "Age Group"], "split": "vowel_label",
+              "vowels": ["IY", "EH"]},
+        headers=h,
+    ).json()
+    xs = {str(x) for trace in crossed["data"] for x in trace.get("x", [])}
+    assert {"F · Older", "M · Young"} <= xs
+    assert "Sex × Age Group" in crossed["layout"]["title"]["text"]
+    faceted = client.post(
+        "/api/figure/cross",
+        json={"formant": "F1_norm", "x": "Age Group", "split": "vowel_label", "facet": "Sex",
+              "vowels": ["IY", "EH"]},
+        headers=h,
+    ).json()
+    panels = {a["text"] for a in faceted["layout"].get("annotations", [])}
+    assert {"F", "M"} <= panels
+    ridge = client.post("/api/figure/ridgeline",
+                        json={"value": "F1_norm", "group": ["Sex", "Age Group"]}, headers=h).json()
+    assert len(ridge["data"]) == 6  # 2 × 3 ridges
+    space2 = client.post("/api/figure/vowel-space",
+                         json={"color": ["vowel_canon", "Sex"], "vowels": ["IY", "EH"]}, headers=h).json()
+    assert {t["name"] for t in space2["data"]} >= {"IY · F", "EH · M"}
+    bad = client.post("/api/figure/ridgeline", json={"value": "F1_norm", "group": []}, headers=h)
+    assert bad.status_code == 400
+
 
 def test_separation_builtin_captures_merger(client):
     h = H("s-sep")

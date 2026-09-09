@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { BrowseResult } from '../types'
+import { Portal } from './ui'
 
 // A modal that browses the *server* filesystem (the backend runs on the user's
 // own machine), so a corpus folder can be clicked instead of typed.
@@ -49,6 +50,7 @@ export function FolderPicker({
   }, [])
 
   return (
+    <Portal>
     <div className="modal-backdrop" onClick={onClose}>
       <div className="modal" onClick={(e) => e.stopPropagation()}>
         <div className="modal-head">
@@ -112,5 +114,6 @@ export function FolderPicker({
         )}
       </div>
     </div>
+    </Portal>
   )
 }

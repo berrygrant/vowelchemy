@@ -4,7 +4,7 @@ import type { Ctx, ToolsPayload } from '../types'
 import { useBusy } from '../hooks/useBusy'
 import { useJob } from '../hooks/useJob'
 import { FolderPicker } from './FolderPicker'
-import { LogBox, Notice } from './ui'
+import { LogBox, Notice, Portal } from './ui'
 
 const MAMBA_CMD = 'mamba create -n aligner -c conda-forge montreal-forced-aligner'
 const R_INSTALL_CMD = 'install.packages("phontrast")'
@@ -121,7 +121,7 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
           : 'R not found'
 
   return (
-    <>
+    <Portal>
       <div className="modal-backdrop" onClick={onClose} role="dialog" aria-label="Set up tools">
         <div className="modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-head">
@@ -421,6 +421,6 @@ export function ToolsPanel({ ctx, onClose }: { ctx: Ctx; onClose: () => void }) 
           onClose={() => setPickingR(false)}
         />
       )}
-    </>
+    </Portal>
   )
 }

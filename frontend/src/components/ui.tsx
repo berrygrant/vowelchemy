@@ -1,4 +1,12 @@
 import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+
+// Modals render into document.body. Mounted inside the sticky sidebar they sit
+// in its stacking context and end up underneath Plotly's absolutely positioned
+// chart layers on stages 5 and 6.
+export function Portal({ children }: { children: ReactNode }) {
+  return createPortal(children, document.body)
+}
 
 export function Card({ title, subtitle, children }: { title?: string; subtitle?: string; children: ReactNode }) {
   return (

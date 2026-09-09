@@ -375,6 +375,15 @@ def subprocess_env(base: Optional[dict] = None) -> dict:
     in ``Library\\bin`` are found.
     """
     env = dict(base if base is not None else os.environ)
+    if getattr(sys, "frozen", False):
+        # PyInstaller points the loader at its own bundled libraries; a child
+        # like R must load the system libraries it was built against instead.
+        for var in ("LD_LIBRARY_PATH", "DYLD_LIBRARY_PATH"):
+            original = env.pop(f"{var}_ORIG", None)
+            if original:
+                env[var] = original
+            else:
+                env.pop(var, None)
     dirs = [str(d) for d in search_dirs()]
     if dirs:
         existing = env.get("PATH", "")

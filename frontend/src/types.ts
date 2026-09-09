@@ -21,7 +21,7 @@ export interface RCandidate {
 
 export interface SeparationSettings {
   vowels?: string[]
-  group_by?: string | null
+  group_by?: string | string[] | null
   dims?: string[] | null
   engine?: string
   density?: string
@@ -48,6 +48,7 @@ export interface Status {
   browse_confined?: boolean
   tool_env?: string | null
   app?: AppInfo
+  probing?: boolean
 }
 
 export interface AppInfo {

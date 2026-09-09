@@ -28,17 +28,19 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
   const [error, setError] = useState('')
   const [loadingFig, setLoadingFig] = useState(false)
 
-  // controls
+  // controls — grouping pickers take several columns, which the server crosses
+  // into one factor ("F · Older"); the cross builder can also facet by a column.
   const [crossFormant, setCrossFormant] = useState('F1_norm')
-  const [crossX, setCrossX] = useState('')
+  const [crossXs, setCrossXs] = useState<string[]>([])
   const [crossSplit, setCrossSplit] = useState('vowel_label')
+  const [crossFacet, setCrossFacet] = useState('')
   const [crossKind, setCrossKind] = useState('violin')
   const [crossVowels, setCrossVowels] = useState<string[]>([])
-  const [spaceColor, setSpaceColor] = useState('vowel_canon')
+  const [spaceColors, setSpaceColors] = useState<string[]>(['vowel_canon'])
   const [spaceTokens, setSpaceTokens] = useState(true)
   const [spaceVowels, setSpaceVowels] = useState<string[]>([])
   const [ridgeValue, setRidgeValue] = useState('F1_norm')
-  const [ridgeGroup, setRidgeGroup] = useState('')
+  const [ridgeGroups, setRidgeGroups] = useState<string[]>([])
   const [spaceMode, setSpaceMode] = useState('scatter')
   const [trajKind, setTrajKind] = useState('space')
   const [trajValue, setTrajValue] = useState('F1_norm')
@@ -79,8 +81,8 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
         setGrouping(g)
         setVowels(v)
         const firstDemo = preferredGroup(g.columns, g.context_columns ?? [])
-        setCrossX((x) => x || firstDemo)
-        setRidgeGroup((x) => x || firstDemo)
+        setCrossXs((x) => (x.length ? x : firstDemo ? [firstDemo] : []))
+        setRidgeGroups((x) => (x.length ? x : firstDemo ? [firstDemo] : []))
         setCrossFormant((f) => (g.norm_formants.includes(f) ? f : g.norm_formants[0] ?? f))
         setRidgeValue((f) => (g.norm_formants.includes(f) ? f : g.norm_formants[0] ?? f))
         const pref = (v as VowelInfo[]).map((x) => x.vowel)
@@ -100,15 +102,16 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
       if (tab === 'cross') {
         fig = await api.post('/api/figure/cross', {
           formant: crossFormant,
-          x: crossX,
+          x: crossXs,
           split: crossSplit,
+          facet: crossFacet || null,
           kind: crossKind,
           vowels: crossVowels.length ? crossVowels : null,
           dark: ctx.dark,
         })
       } else if (tab === 'space') {
         fig = await api.post('/api/figure/vowel-space', {
-          color: spaceColor,
+          color: spaceColors,
           show_tokens: spaceTokens,
           mode: spaceMode,
           vowels: spaceVowels.length ? spaceVowels : null,
@@ -117,7 +120,7 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
       } else if (tab === 'ridge') {
         fig = await api.post('/api/figure/ridgeline', {
           value: ridgeValue,
-          group: ridgeGroup,
+          group: ridgeGroups,
           dark: ctx.dark,
         })
       } else {
@@ -142,14 +145,16 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
       setLoadingFig(false)
     }
   }, [
-    loaded, grouping, tab, crossFormant, crossX, crossSplit, crossKind, crossVowels,
-    spaceColor, spaceTokens, spaceMode, spaceVowels, ridgeValue, ridgeGroup,
+    loaded, grouping, tab, crossFormant, crossXs, crossSplit, crossFacet, crossKind, crossVowels,
+    spaceColors, spaceTokens, spaceMode, spaceVowels, ridgeValue, ridgeGroups,
     trajKind, trajValue, trajVowels, tracksLoaded, ctx.dark,
   ])
 
   useEffect(() => {
-    if (crossX) fetchFigure()
-  }, [fetchFigure, crossX])
+    const ready =
+      tab === 'cross' ? crossXs.length > 0 : tab === 'ridge' ? ridgeGroups.length > 0 : tab === 'space' ? spaceColors.length > 0 : true
+    if (ready) fetchFigure()
+  }, [fetchFigure, tab, crossXs, ridgeGroups, spaceColors])
 
   if (!loaded) {
     return (
@@ -161,8 +166,10 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
   }
 
   const demoCols = groupableColumns(grouping)
+  const groupOpts = demoCols.map((c) => ({ value: c, label: c }))
   const formants = grouping?.norm_formants ?? ['F1_norm', 'F2_norm']
   const vowelOpts = vowels.map((v) => ({ value: v.vowel, label: v.keyword ?? v.vowel }))
+  const crossLabel = crossXs.join(' × ')
 
   return (
     <div className="stage">
@@ -186,8 +193,13 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
         {tab === 'cross' && (
           <>
             <p className="muted">
-              Distribution of a formant across a factor — e.g. BET/BEET F1 by Age Group.
+              Distribution of a formant across a factor — e.g. BET/BEET F1 by Age Group. Pick two
+              factors for the x axis to cross them (Sex × Age Group), or facet by one to get a
+              panel per level.
             </p>
+            <Field label="X axis (group) — pick several to cross them">
+              <MultiSelect options={groupOpts} selected={crossXs} onChange={setCrossXs} />
+            </Field>
             <div className="grid-4">
               <Field label="Formant">
                 <select value={crossFormant} onChange={(e) => setCrossFormant(e.target.value)}>
@@ -196,21 +208,28 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
                   ))}
                 </select>
               </Field>
-              <Field label="X axis (group)">
-                <select value={crossX} onChange={(e) => setCrossX(e.target.value)}>
-                  {demoCols.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
               <Field label="Split / colour">
                 <select value={crossSplit} onChange={(e) => setCrossSplit(e.target.value)}>
                   <option value="vowel_label">vowel</option>
-                  {demoCols.filter((c) => c !== crossX).map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
+                  {demoCols
+                    .filter((c) => !crossXs.includes(c) && c !== crossFacet)
+                    .map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              <Field label="Facet (one panel per level)">
+                <select value={crossFacet} onChange={(e) => setCrossFacet(e.target.value)}>
+                  <option value="">— none —</option>
+                  {demoCols
+                    .filter((c) => !crossXs.includes(c) && c !== crossSplit)
+                    .map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
                 </select>
               </Field>
               <Field label="Style">
@@ -224,23 +243,28 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
             <Field label="Vowels (none = all)">
               <MultiSelect options={vowelOpts} selected={crossVowels} onChange={setCrossVowels} />
             </Field>
+            {crossXs.length > 1 && (
+              <p className="muted small">
+                x axis: {crossLabel} — levels read “Sex · Age Group”, ordered by {crossXs[0]} first.
+              </p>
+            )}
           </>
         )}
 
         {tab === 'space' && (
           <>
-            <p className="muted">F2×F1 vowel space with 2-SD confidence ellipses and centroid labels.</p>
+            <p className="muted">
+              F2×F1 vowel space with 2-SD confidence ellipses and centroid labels. Colour by vowel,
+              or cross it with a factor (vowel × Sex) to compare groups in one plot.
+            </p>
+            <Field label="Colour by — pick several to cross them">
+              <MultiSelect
+                options={[{ value: 'vowel_canon', label: 'vowel' }, ...groupOpts]}
+                selected={spaceColors}
+                onChange={setSpaceColors}
+              />
+            </Field>
             <div className="grid-3">
-              <Field label="Colour by">
-                <select value={spaceColor} onChange={(e) => setSpaceColor(e.target.value)}>
-                  <option value="vowel_canon">vowel</option>
-                  {demoCols.map((c) => (
-                    <option key={c} value={c}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
-              </Field>
               <Field label="Mode" hint="contour/ellipse suit very large corpora">
                 <select value={spaceMode} onChange={(e) => setSpaceMode(e.target.value)}>
                   <option value="scatter">scatter + ellipse</option>
@@ -263,7 +287,10 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
 
         {tab === 'ridge' && (
           <>
-            <p className="muted">Density curves per group level — reveals modality and shift.</p>
+            <p className="muted">
+              Density curves per group level — reveals modality and shift. Pick several factors to
+              cross them (one ridge per Sex × Age Group combination).
+            </p>
             <div className="grid-2">
               <Field label="Formant">
                 <select value={ridgeValue} onChange={(e) => setRidgeValue(e.target.value)}>
@@ -272,14 +299,10 @@ export function VisualizeStage({ ctx }: { ctx: Ctx }) {
                   ))}
                 </select>
               </Field>
-              <Field label="Group">
-                <select value={ridgeGroup} onChange={(e) => setRidgeGroup(e.target.value)}>
-                  {demoCols.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
             </div>
+            <Field label="Group — pick several to cross them">
+              <MultiSelect options={groupOpts} selected={ridgeGroups} onChange={setRidgeGroups} />
+            </Field>
           </>
         )}
 

@@ -30,6 +30,15 @@ export function App() {
     refresh()
   }, [refresh])
 
+  // Keep the tool dots current on their own: poll quickly while the server is
+  // still looking for a tool (R takes a moment to answer at startup), then as
+  // a slow heartbeat so an install or a new environment shows up unprompted.
+  useEffect(() => {
+    if (!status) return
+    const id = window.setTimeout(refresh, status.probing ? 1500 : 60000)
+    return () => window.clearTimeout(id)
+  }, [status, refresh])
+
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const handler = (e: MediaQueryListEvent) => setDark(e.matches)

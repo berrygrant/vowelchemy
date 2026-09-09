@@ -284,7 +284,7 @@ def probe_rscript(rscript: str, timeout: float = 30) -> Optional[dict]:
     """
     try:
         res = subprocess.run([rscript, "-e", _PROBE_R], capture_output=True, text=True,
-                             timeout=timeout)
+                             timeout=timeout, env=toolenv.subprocess_env())
     except (subprocess.SubprocessError, OSError):
         return None
     info: dict = {"path": rscript, "r_version": None, "home": None, "library": None,

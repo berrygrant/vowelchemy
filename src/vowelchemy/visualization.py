@@ -248,6 +248,9 @@ def formant_cross(
     color_order: Optional[Sequence[str]] = None,
     title: Optional[str] = None,
     max_points: int = 8000,
+    facet: Optional[str] = None,
+    facet_order: Optional[Sequence[str]] = None,
+    facet_wrap: int = 3,
 ) -> go.Figure:
     """Distribution of ``formant`` across ``x`` (optionally split by ``color``).
 
@@ -255,6 +258,8 @@ def formant_cross(
     ``"violin"`` (default; box + all points inside), ``"box"``, or ``"strip"``.
     Violins expose modality and skew that a bar-of-means would hide.  For very
     large corpora the frame is thinned to ``max_points`` rows for rendering.
+    ``facet`` draws one panel per level of another factor (e.g. Sex), so a
+    second split needs neither a combined x label nor a second colour.
     """
     plot_df = df.copy()
     thinned = 0
@@ -270,10 +275,18 @@ def formant_cross(
         order = color_order or sorted(cats)
         cat_orders[color] = order
         color_map = stable_color_map(cats, dark=dark, order=order)
+    n_facets = 0
+    if facet and facet in plot_df.columns:
+        levels = list(dict.fromkeys(plot_df[facet].dropna().astype(str)))
+        cat_orders[facet] = list(facet_order) if facet_order else sorted(levels)
+        n_facets = len(levels)
+    else:
+        facet = None
 
     common = dict(
         x=x, y=formant, color=color if color in plot_df.columns else None,
         category_orders=cat_orders, color_discrete_map=color_map,
+        facet_col=facet, facet_col_wrap=facet_wrap if facet else None,
     )
     if kind == "box":
         fig = px.box(plot_df, points="outliers", **common)
@@ -290,13 +303,22 @@ def formant_cross(
         )
         fig.update_layout(violinmode="group")
 
-    ttl = title or f"{_axis_title(formant)} by {x}"
+    ttl = title or f"{_axis_title(formant)} by {x}" + (f", per {facet}" if facet else "")
     if thinned:
         ttl += f"  (thinned {thinned:,} tokens for display)"
     fig.update_yaxes(title=_axis_title(formant))
     fig.update_xaxes(title=x)
     fig.update_layout(title=ttl, legend_title_text=color if color else "")
-    return _apply_theme(fig, dark)
+    height = 520
+    if facet:
+        # Panel titles read "Sex=F" by default; the level alone is enough.
+        fig.for_each_annotation(lambda a: a.update(text=a.text.split("=", 1)[-1]))
+        fig.update_xaxes(title=None)
+        fig.update_yaxes(matches="y", title=None)
+        fig.update_layout(yaxis_title=_axis_title(formant))  # once, on the first panel
+        rows = -(-n_facets // facet_wrap)
+        height = max(520, 360 * rows + 120)
+    return _apply_theme(fig, dark, height=height)
 
 
 # --------------------------------------------------------------------------- #

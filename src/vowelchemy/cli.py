@@ -202,8 +202,13 @@ def _cmd_separation(args: argparse.Namespace) -> int:
     if args.method != "none":
         df = norm.normalize(df, schema, method=args.method).data
     vowels = args.vowels.split(",") if args.vowels else None
+    group_by = args.group_by
+    if group_by and "," in group_by:  # several factors → one crossed factor ("F · Older")
+        from . import analysis
+
+        df, group_by = analysis.combined_group(df, [c.strip() for c in group_by.split(",")])
     sep = metrics.pairwise_separation(
-        df, schema, vowels=vowels, group_by=args.group_by, density=args.density, bw=args.bw,
+        df, schema, vowels=vowels, group_by=group_by, density=args.density, bw=args.bw,
         min_tokens=args.min_tokens, bootstrap=args.bootstrap, permutations=args.permutations,
     )
     if sep.empty:
@@ -379,7 +384,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("separation", help="compute separation metrics (phontrast port)")
     s.add_argument("vowels_csv")
     s.add_argument("--vowels", default=None, help="comma-separated vowels (ARPABET/keyword)")
-    s.add_argument("--group-by", default=None, dest="group_by")
+    s.add_argument("--group-by", default=None, dest="group_by",
+                   help="column to compute within; several, comma-separated, are crossed "
+                        "(e.g. 'Sex,Age Group')")
     s.add_argument("-m", "--method", default="lobanov", help="normalization before metrics")
     s.add_argument("-s", "--speakers", default=None)
     s.add_argument("--density", default="kde", choices=["kde", "mvnorm"],
