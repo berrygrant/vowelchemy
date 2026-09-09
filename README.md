@@ -261,7 +261,7 @@ running, from where, and which tools it can see:
 ```
 $ vowelchemy doctor
 Vowelchemy
-  version   : 0.3.3
+  version   : 0.3.4
   code      : /Users/you/vowelchemy/src/vowelchemy
   python    : 3.12.4 (/Users/you/vowelchemy/.venv-app/bin/python3)
   UI bundle : /Users/you/vowelchemy/src/vowelchemy/webui
