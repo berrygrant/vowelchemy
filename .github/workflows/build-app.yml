@@ -10,6 +10,13 @@ name: Build desktop app
 #   - on a version tag pushed by hand;
 #   - on demand (Actions tab -> "Build desktop app" -> Run workflow), which
 #     only uploads the zips as workflow artifacts.
+#
+# Signing is optional and switched on by repository secrets (docs/RELEASING.md,
+# "Signing"). With a Developer ID certificate and Apple notarization
+# credentials the macOS app is signed, notarized and stapled, so it opens
+# without the Gatekeeper "Apple could not verify…" detour; with a code-signing
+# certificate the Windows exe carries a publisher name. Without the secrets
+# the apps are built unsigned, exactly as before.
 
 on:
   workflow_call:
@@ -18,6 +25,29 @@ on:
         description: "Release tag to publish (e.g. v0.3.3)"
         required: true
         type: string
+    secrets:
+      MACOS_CERTIFICATE:
+        required: false
+      MACOS_CERTIFICATE_PASSWORD:
+        required: false
+      MACOS_SIGNING_IDENTITY:
+        required: false
+      APPLE_API_KEY:
+        required: false
+      APPLE_API_KEY_ID:
+        required: false
+      APPLE_API_ISSUER_ID:
+        required: false
+      APPLE_ID:
+        required: false
+      APPLE_TEAM_ID:
+        required: false
+      APPLE_APP_PASSWORD:
+        required: false
+      WINDOWS_CERTIFICATE:
+        required: false
+      WINDOWS_CERTIFICATE_PASSWORD:
+        required: false
   workflow_dispatch:
   push:
     tags: ["v*"]
@@ -31,6 +61,9 @@ permissions:
 env:
   # The tag being released: the caller's input, else the pushed tag, else none.
   RELEASE_TAG: ${{ inputs.tag || (startsWith(github.ref, 'refs/tags/') && github.ref_name) || '' }}
+  # Secrets cannot be tested in a step's `if:` directly; these flags can.
+  SIGN_MACOS: ${{ secrets.MACOS_CERTIFICATE != '' }}
+  SIGN_WINDOWS: ${{ secrets.WINDOWS_CERTIFICATE != '' }}
 
 jobs:
   build:
@@ -60,15 +93,41 @@ jobs:
         shell: bash
       - name: Install
         run: pip install . "pyinstaller>=6"
-      - name: Build
+
+      # macOS, signed: one script builds (PyInstaller signs each binary and
+      # the bundle), notarizes, staples and zips. Unsigned: build and zip.
+      - name: Build, sign, notarize and staple (macOS)
+        if: runner.os == 'macOS' && env.SIGN_MACOS == 'true'
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          APPLE_API_KEY: ${{ secrets.APPLE_API_KEY }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: bash packaging/desktop/build_signed_macos.sh Vowelchemy-macOS.zip
+      - name: Build (unsigned)
+        if: runner.os != 'macOS' || env.SIGN_MACOS != 'true'
         run: pyinstaller packaging/desktop/vowelchemy.spec --noconfirm
       - name: Package (macOS .app -> zip)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && env.SIGN_MACOS != 'true'
         run: ditto -c -k --keepParent dist/Vowelchemy.app Vowelchemy-macOS.zip
+
+      - name: Sign (Windows)
+        if: runner.os == 'Windows' && env.SIGN_WINDOWS == 'true'
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: packaging/desktop/sign_windows.ps1 dist/Vowelchemy.exe
+        shell: pwsh
       - name: Package (Windows .exe -> zip)
         if: runner.os == 'Windows'
         run: Compress-Archive -Path dist/Vowelchemy.exe -DestinationPath Vowelchemy-Windows.zip
         shell: pwsh
+
       - uses: actions/upload-artifact@v4
         with:
           name: Vowelchemy-${{ matrix.label }}

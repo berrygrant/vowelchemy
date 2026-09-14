@@ -68,3 +68,5 @@ jobs:
     uses: ./.github/workflows/build-app.yml
     with:
       tag: v${{ needs.tag.outputs.version }}
+    # Hands the signing/notarization secrets (if any are set) to the build.
+    secrets: inherit

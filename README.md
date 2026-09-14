@@ -39,9 +39,12 @@ ahead.
   the folder (a few minutes, and it needs
   [Python 3](https://www.python.org/downloads/)); later runs start right away.
 
-On first open, macOS may say the app is from an unidentified developer —
-right-click the file and choose **Open**. On Windows, click **More info ▸ Run
-anyway**.
+If macOS refuses the first open with "Apple could not verify…", click
+**Done**, open **System Settings ▸ Privacy & Security**, scroll to the line
+saying Vowelchemy was blocked and click **Open Anyway**, then open the app
+again (on macOS 14 and earlier, right-click ▸ **Open** is enough). On Windows,
+click **More info ▸ Run anyway**. Releases signed and notarized by the lab
+open without any of this — see [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ### With Python
 

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Hardened-runtime entitlements for the signed macOS app.
+
+  Notarization requires the hardened runtime, and a PyInstaller app needs a
+  few relaxations to run under it: Python's extension modules and bundled
+  libraries are loaded dynamically (library validation, executable memory),
+  and PyInstaller's bootloader passes library paths to the child process
+  through DYLD_* environment variables. All three are standard exceptions
+  allowed for Developer ID distribution. Used by vowelchemy.spec whenever
+  VOWELCHEMY_CODESIGN_IDENTITY is set (see build_signed_macos.sh).
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+</dict>
+</plist>

@@ -26,6 +26,17 @@ PLATFORM_ICON = ICON_ICNS if sys.platform == "darwin" else ICON_ICO
 # Resolve the vowelchemy package from the source checkout itself (src layout),
 # so the build works whether the venv install was editable or regular.
 SRC_DIR = os.path.abspath(os.path.join(SPECPATH, "..", "..", "src"))  # noqa: F821
+sys.path.insert(0, SRC_DIR)
+from vowelchemy import __version__ as APP_VERSION  # noqa: E402  (the bundle's version)
+
+# macOS signing. When VOWELCHEMY_CODESIGN_IDENTITY names a "Developer ID
+# Application" certificate in an unlocked keychain, PyInstaller signs every
+# binary and then the bundle with it — hardened runtime, secure timestamp and
+# the entitlements next to this file — which is what notarization requires.
+# build_signed_macos.sh sets it (and notarizes afterwards); unset means the
+# usual ad-hoc signature, fine for local test builds and other platforms.
+CODESIGN_IDENTITY = os.environ.get("VOWELCHEMY_CODESIGN_IDENTITY") or None
+ENTITLEMENTS_FILE = os.path.join(HERE, "entitlements.plist") if CODESIGN_IDENTITY else None
 
 datas = collect_data_files("vowelchemy")  # webui/** and any other package data
 datas += [(ICON_PNG, ".")]  # the status window loads this at run time
@@ -67,6 +78,8 @@ if ONEFILE:
         console=False,
         upx=False,
         icon=PLATFORM_ICON,
+        codesign_identity=CODESIGN_IDENTITY,
+        entitlements_file=ENTITLEMENTS_FILE,
     )
 else:
     exe = EXE(
@@ -77,7 +90,10 @@ else:
         console=False,
         upx=False,
         icon=PLATFORM_ICON,
+        codesign_identity=CODESIGN_IDENTITY,
+        entitlements_file=ENTITLEMENTS_FILE,
     )
+    # COLLECT and BUNDLE inherit the signing settings from the EXE.
     coll = COLLECT(exe, a.binaries, a.datas, name=APP_NAME, upx=False)
     if sys.platform == "darwin":
         app = BUNDLE(
@@ -86,6 +102,8 @@ else:
             icon=ICON_ICNS,
             bundle_identifier="info.luv-lab.vowelchemy",
             info_plist={
+                "CFBundleShortVersionString": APP_VERSION,
+                "CFBundleVersion": APP_VERSION,
                 "NSHighResolutionCapable": True,
                 "LSApplicationCategoryType": "public.app-category.education",
             },

@@ -73,9 +73,13 @@ No corpus, no aligner, no R needed — just the app.
   from python.org and double-click again). Keep the window it opens around;
   closing it stops Vowelchemy.
 
-First-open warnings are normal for downloads like these: on macOS,
-**right-click the file → Open** the first time instead of double-clicking;
-on Windows SmartScreen, click **More info → Run anyway**.
+First-open warnings are normal for downloads like these. If macOS says
+"Apple could not verify…", click **Done**, open **System Settings → Privacy &
+Security**, scroll down to the line saying it was blocked and click **Open
+Anyway**, then double-click the file again (on macOS 14 and earlier,
+right-click → **Open** the first time is enough). On Windows SmartScreen,
+click **More info → Run anyway**. A release signed by the lab (see
+`docs/RELEASING.md`) opens on macOS without any of this.
 
 **The terminal way** (equivalent, and handy later for B.3): open a terminal
 (Terminal on macOS; PowerShell on Windows) and type these lines one at a
