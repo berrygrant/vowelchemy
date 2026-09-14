@@ -495,13 +495,33 @@ input[type='file'] {
 }
 
 /* Path input (text + Browse…) */
+.path-input-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
 .path-input {
   display: flex;
   gap: 6px;
   align-items: center;
+  border-radius: 8px;
 }
 .path-input input {
   flex: 1;
+}
+/* A folder being dragged over the field: show it is a drop target. */
+.path-input.drop-over {
+  outline: 2px dashed var(--accent, #2a78d6);
+  outline-offset: 3px;
+}
+.path-hint {
+  line-height: 1.35;
+}
+.path-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 2px;
 }
 
 .side-version {

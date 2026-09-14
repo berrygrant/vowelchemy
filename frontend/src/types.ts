@@ -46,6 +46,7 @@ export interface Status {
     separation?: SeparationSettings | null
   }
   browse_confined?: boolean
+  native_dialog?: boolean // the server machine can show its own folder chooser
   tool_env?: string | null
   app?: AppInfo
   probing?: boolean

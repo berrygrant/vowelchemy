@@ -18,6 +18,11 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import subprocess
+import sys
+import time
+from collections import deque
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, Optional
@@ -540,3 +545,276 @@ def list_directory(
     home = str(root_p) if root_p is not None else str(Path.home())
     return {"path": str(base), "parent": parent, "home": home,
             "dirs": dirs, "files": files, "confined": root_p is not None}
+
+
+# --------------------------------------------------------------------------- #
+# Folders dropped on the app, and the system's own folder chooser
+# --------------------------------------------------------------------------- #
+# A browser never reveals where a dropped folder lives — only its name and, for
+# a directory, its top-level listing. That is enough to find it: look in the
+# places corpora live (Desktop, Documents, Downloads, home, mounted drives) for
+# a folder with that name and prefer the one whose contents match the listing.
+# Folders that never hold a corpus are skipped so the search stays quick.
+_SKIP_DIR_NAMES = {
+    "node_modules", "Library", ".venv", "venv", "__pycache__", "site-packages",
+    "Applications", "System", "Windows", "Program Files", "Program Files (x86)",
+    "AppData", "$RECYCLE.BIN", "System Volume Information", "lost+found",
+    "proc", "sys", "dev", "Trash", ".Trash",
+}
+# macOS aliases and Windows shortcuts drop with a suffix on the target's name.
+_ALIAS_SUFFIXES = (" alias", ".alias", " - shortcut", ".lnk", " shortcut")
+
+
+def normalize_dropped_name(name: str) -> str:
+    """The folder a dropped item stands for: an alias/shortcut sheds its suffix."""
+    n = str(name).strip()
+    lowered = n.lower()
+    for suffix in _ALIAS_SUFFIXES:
+        if lowered.endswith(suffix) and len(n) > len(suffix):
+            return n[: -len(suffix)].rstrip()
+    return n
+
+
+def default_search_roots(root: Optional[str | os.PathLike] = None) -> list[Path]:
+    """Where to look for a dropped folder, most likely first (or just ``root``)."""
+    if root:
+        return [Path(root).expanduser()]
+    home = Path.home()
+    roots = [home / d for d in ("Desktop", "Documents", "Downloads")] + [home]
+    for mount in (Path("/Volumes"), Path("/mnt"), Path("/media"), Path("/run/media")):
+        try:
+            if mount.is_dir():
+                roots += sorted(p for p in mount.iterdir() if p.is_dir())
+        except OSError:
+            continue
+    if sys.platform == "win32":
+        roots += [Path(f"{d}:\\") for d in "DEFGHIJKLMNOPQRSTUVWXYZ" if Path(f"{d}:\\").is_dir()]
+    roots.append(Path.cwd())
+    out: list[Path] = []
+    seen: set[Path] = set()
+    for r in roots:
+        try:
+            resolved = r.resolve()
+        except OSError:
+            continue
+        if resolved.is_dir() and resolved not in seen:
+            seen.add(resolved)
+            out.append(r)
+    return out
+
+
+def _listing_overlap(directory: Path, sample: set[str], cap: int = 5000) -> tuple[float, int, int]:
+    """``(score, matched, total)``: how much of the dropped listing this folder holds."""
+    if not sample:
+        return 0.5, 0, 0
+    names: set[str] = set()
+    try:
+        with os.scandir(directory) as it:
+            for i, entry in enumerate(it):
+                names.add(entry.name)
+                if i >= cap:
+                    break
+    except OSError:
+        return 0.0, 0, len(sample)
+    matched = len(sample & names)
+    return matched / len(sample), matched, len(sample)
+
+
+def locate_folder(
+    name: str,
+    entries: Optional[Iterable[str]] = None,
+    kind: str = "directory",
+    roots: Optional[Iterable[str | os.PathLike]] = None,
+    root: Optional[str | os.PathLike] = None,
+    max_depth: int = 5,
+    time_budget: float = 4.0,
+    limit: int = 20,
+) -> list[dict]:
+    """Candidate locations for a folder someone dropped on the app.
+
+    ``kind="directory"`` finds folders named ``name`` (alias suffixes removed)
+    and scores each by how many of the dropped top-level ``entries`` it holds;
+    ``kind="file"`` finds folders *containing* a file named ``name`` (the
+    dropped item was a file, e.g. a recording inside the corpus) and reports
+    that file too.  Searches ``roots`` (default: :func:`default_search_roots`,
+    or just ``root`` when the browser is confined) breadth-first to
+    ``max_depth``, skipping hidden and system folders, within ``time_budget``
+    seconds.  Each candidate: ``path``, ``score`` (1.0 = every dropped entry
+    found), ``matched``, ``total``, ``depth`` and, for files, ``file``.
+    """
+    wanted = normalize_dropped_name(name)
+    if not wanted:
+        return []
+    wanted_lower = wanted.lower()
+    sample = {e for e in (entries or []) if e}
+    deadline = time.monotonic() + time_budget
+    search_roots = [Path(r) for r in roots] if roots else default_search_roots(root)
+
+    results: list[dict] = []
+    found: set[Path] = set()
+    visited: set[Path] = set()
+
+    def add(path: Path, score: float, matched: int, total: int, file: Optional[Path] = None) -> None:
+        try:
+            key = path.resolve()
+        except OSError:
+            return
+        if key in found:
+            return
+        found.add(key)
+        entry = {"path": str(path), "score": round(score, 3), "matched": matched, "total": total,
+                 "depth": len(path.parts)}
+        if file is not None:
+            entry["file"] = str(file)
+        results.append(entry)
+
+    for start in search_roots:
+        queue: deque[tuple[Path, int]] = deque([(start, 0)])
+        while queue:
+            if time.monotonic() > deadline or len(results) >= limit * 3:
+                break
+            directory, depth = queue.popleft()
+            try:
+                key = directory.resolve()
+            except OSError:
+                continue
+            if key in visited:
+                continue
+            visited.add(key)
+            try:
+                with os.scandir(directory) as it:
+                    children = list(it)
+            except OSError:
+                continue
+            for child in children:
+                try:
+                    is_dir = child.is_dir(follow_symlinks=False)
+                except OSError:
+                    continue
+                if not is_dir:
+                    if kind == "file" and child.name.lower() == wanted_lower:
+                        add(directory, 1.0, 1, 1, file=Path(child.path))
+                    continue
+                if kind == "directory" and child.name.lower() == wanted_lower:
+                    add(Path(child.path), *_listing_overlap(Path(child.path), sample))
+                if (depth < max_depth and not child.name.startswith(".")
+                        and child.name not in _SKIP_DIR_NAMES):
+                    queue.append((Path(child.path), depth + 1))
+
+    results.sort(key=lambda r: (-r["score"], r["depth"], r["path"].lower()))
+    return results[:limit]
+
+
+def _powershell() -> Optional[str]:
+    return shutil.which("powershell") or shutil.which("pwsh")
+
+
+def native_dialog_available() -> bool:
+    """Can this machine show its own folder chooser (osascript / PowerShell / zenity …)?"""
+    if sys.platform == "darwin":
+        return shutil.which("osascript") is not None
+    if sys.platform == "win32":
+        return _powershell() is not None
+    if not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+    if shutil.which("zenity") or shutil.which("kdialog"):
+        return True
+    if getattr(sys, "frozen", False):
+        return False  # the packaged app cannot run `python -c` for a tkinter dialog
+    import importlib.util
+
+    return importlib.util.find_spec("tkinter") is not None
+
+
+def _native_dialog_command(title: str, start: Optional[str], mode: str) -> Optional[list[str]]:
+    """The subprocess that shows the dialog and prints the chosen path."""
+    want_file = mode == "file"
+    if sys.platform == "darwin":
+        if not shutil.which("osascript"):
+            return None
+        esc = title.replace("\\", "\\\\").replace('"', '\\"')
+        line = f'set chosen to choose {"file" if want_file else "folder"} with prompt "{esc}"'
+        if start:
+            start_esc = start.replace("\\", "\\\\").replace('"', '\\"')
+            line += f' default location POSIX file "{start_esc}"'
+        return ["osascript", "-e", line, "-e", "POSIX path of chosen"]
+    if sys.platform == "win32":
+        ps = _powershell()
+        if not ps:
+            return None
+        q = lambda s: s.replace("'", "''")  # noqa: E731
+        lines = [
+            "Add-Type -AssemblyName System.Windows.Forms",
+            "$owner = New-Object System.Windows.Forms.Form",
+            "$owner.TopMost = $true",
+        ]
+        if want_file:
+            lines += [
+                "$d = New-Object System.Windows.Forms.OpenFileDialog",
+                f"$d.Title = '{q(title)}'",
+            ] + ([f"$d.InitialDirectory = '{q(start)}'"] if start else []) + [
+                "if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.FileName }",
+            ]
+        else:
+            lines += [
+                "$d = New-Object System.Windows.Forms.FolderBrowserDialog",
+                f"$d.Description = '{q(title)}'",
+                "$d.ShowNewFolderButton = $false",
+            ] + ([f"$d.SelectedPath = '{q(start)}'"] if start else []) + [
+                "if ($d.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { Write-Output $d.SelectedPath }",
+            ]
+        return [ps, "-NoProfile", "-STA", "-Command", "; ".join(lines)]
+    if shutil.which("zenity"):
+        cmd = ["zenity", "--file-selection", f"--title={title}"]
+        if not want_file:
+            cmd.append("--directory")
+        if start:
+            cmd.append(f"--filename={start.rstrip('/')}/")
+        return cmd
+    if shutil.which("kdialog"):
+        flag = "--getopenfilename" if want_file else "--getexistingdirectory"
+        return ["kdialog", flag, start or str(Path.home()), "--title", title]
+    if getattr(sys, "frozen", False):
+        return None
+    script = (
+        "import tkinter, tkinter.filedialog as fd; r = tkinter.Tk(); r.withdraw(); "
+        "r.attributes('-topmost', True); "
+        f"print(fd.{'askopenfilename' if want_file else 'askdirectory'}(title={title!r}"
+        + (f", initialdir={start!r}" if start else "") + ") or '')"
+    )
+    return [sys.executable, "-c", script]
+
+
+def native_folder_dialog(
+    title: str = "Choose a folder",
+    start: Optional[str | os.PathLike] = None,
+    mode: str = "dir",
+    timeout: float = 600.0,
+) -> Optional[str]:
+    """Show the operating system's own folder (or file) chooser; ``None`` if cancelled.
+
+    The server runs on the user's machine, so the dialog appears on their
+    screen — the most accurate way to point the app at a folder.  Raises
+    ``RuntimeError`` when no dialog can be shown here.
+    """
+    start_dir = None
+    if start:
+        p = Path(start).expanduser()
+        start_dir = str(p if p.is_dir() else p.parent) if (p.is_dir() or p.parent.is_dir()) else None
+    cmd = _native_dialog_command(title, start_dir, mode)
+    if cmd is None:
+        raise RuntimeError("No system folder dialog is available on this machine — "
+                           "use Browse… or type the path.")
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(f"Could not open the folder dialog: {exc}") from exc
+    lines = [ln.strip() for ln in res.stdout.splitlines() if ln.strip()]
+    chosen = lines[-1] if lines else ""
+    if not chosen:
+        cancelled = res.returncode in (0, 1) or "cancel" in (res.stderr or "").lower()
+        if not cancelled:
+            raise RuntimeError((res.stderr or "").strip()
+                               or f"The folder dialog failed (exit {res.returncode}).")
+        return None
+    return os.path.normpath(chosen)

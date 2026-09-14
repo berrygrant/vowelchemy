@@ -102,6 +102,35 @@ def test_figure_ridgeline(client):
     assert len(fig["data"]) >= 3  # one density per age group
 
 
+def test_dropped_folder_is_located_and_native_dialog_is_guarded(client, tmp_path, monkeypatch):
+    from vowelchemy import api, corpus
+
+    a = tmp_path / "Desktop" / "MyCorpus"
+    a.mkdir(parents=True)
+    (a / "r1.wav").write_bytes(b"RIFF")
+    b = tmp_path / "Downloads" / "MyCorpus"
+    b.mkdir(parents=True)
+    monkeypatch.setattr(corpus, "default_search_roots", lambda root=None: [tmp_path])
+
+    res = client.post("/api/locate-folder", json={"name": "MyCorpus alias", "entries": ["r1.wav"]}).json()
+    assert res["name"] == "MyCorpus"
+    assert [c["path"] for c in res["candidates"]] == [str(a), str(b)]
+    assert res["candidates"][0]["score"] == 1.0
+    by_file = client.post("/api/locate-folder", json={"name": "r1.wav", "kind": "file"}).json()
+    assert by_file["candidates"][0]["file"] == str(a / "r1.wav")
+    assert client.post("/api/locate-folder", json={"name": "  "}).status_code == 400
+
+    monkeypatch.setattr(api, "native_dialog_available", lambda: False)
+    assert client.post("/api/native-folder-dialog", json={}).status_code == 400
+    monkeypatch.setattr(api, "native_dialog_available", lambda: True)
+    monkeypatch.setattr(api, "native_folder_dialog", lambda title, start, mode: str(a))
+    picked = client.post("/api/native-folder-dialog", json={"start": str(tmp_path)}).json()
+    assert picked == {"path": str(a), "cancelled": False}
+    monkeypatch.setattr(api, "native_folder_dialog", lambda title, start, mode: None)
+    assert client.post("/api/native-folder-dialog", json={}).json()["cancelled"] is True
+    assert isinstance(client.get("/api/status").json()["native_dialog"], bool)
+
+
 def test_combined_group_crosses_factors():
     import numpy as np
     import pandas as pd

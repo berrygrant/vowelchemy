@@ -86,7 +86,7 @@ release automatically.)
 
 | Stage | What it does |
 |-------|--------------|
-| **1 · Corpus** | Give one **root folder** and let Vowelchemy find the audio, transcript, and aligned sub-folders, or set each path yourself with the folder picker. Folders can be the same, separate, or per-speaker, and may live on a mounted remote drive. It pairs files by name, spots which recordings are already aligned, and finds existing vowel CSVs. |
+| **1 · Corpus** | Give one **root folder** — drop it from Finder / Explorer onto the field, open your system's folder chooser, browse, or type — and let Vowelchemy find the audio, transcript, and aligned sub-folders, or set each path yourself. Folders can be the same, separate, or per-speaker, and may live on a mounted remote drive. It pairs files by name, spots which recordings are already aligned, and finds existing vowel CSVs. |
 | **2 · Align** | Force-align recordings with MFA. Vowelchemy stages the corpus, downloads models, and runs the alignment as a background job with a live progress bar. |
 | **3 · Extract** | Measure formants with new-fave — again as a background job — or load an existing measurement CSV. Raw Hz are kept so you can re-normalize freely. |
 | **4 · Dataset** | Detect the column schema, join speaker demographics, choose a normalization method, select vowels, filter by any demographic column, preview, and download the tidy dataset as CSV. |

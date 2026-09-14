@@ -39,6 +39,18 @@ export function App() {
     return () => window.clearTimeout(id)
   }, [status, refresh])
 
+  // A folder dropped anywhere but on a path field must not make the browser
+  // navigate away from the app (its default for dropped files).
+  useEffect(() => {
+    const swallow = (e: Event) => e.preventDefault()
+    window.addEventListener('dragover', swallow)
+    window.addEventListener('drop', swallow)
+    return () => {
+      window.removeEventListener('dragover', swallow)
+      window.removeEventListener('drop', swallow)
+    }
+  }, [])
+
   useEffect(() => {
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
     const handler = (e: MediaQueryListEvent) => setDark(e.matches)
