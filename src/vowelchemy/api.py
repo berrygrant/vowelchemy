@@ -55,6 +55,10 @@ from .corpus import (
     find_vowel_data,
     is_within_root,
     list_directory,
+    locate_folder,
+    native_dialog_available,
+    native_folder_dialog,
+    normalize_dropped_name,
     suggest_corpus_layout,
     validate_location,
 )
@@ -394,6 +398,7 @@ def status(x_vowelchemy_session: Optional[str] = Header(default=None)):
             "separation": s.separation or None,
         },
         "browse_confined": BROWSE_ROOT is not None,
+        "native_dialog": native_dialog_available(),
         "tool_env": str(toolenv.selected_prefix()) if toolenv.selected_prefix() else None,
         "app": toolenv.app_info(),
         # A tool look-up is still running (R takes a moment at startup); the UI
@@ -470,6 +475,48 @@ def browse(path: Optional[str] = None, exts: Optional[str] = None):
         return list_directory(path, exts=ext_list, root=BROWSE_ROOT)
     except (NotADirectoryError, FileNotFoundError, PermissionError, OSError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+
+
+class LocateFolderRequest(BaseModel):
+    name: str  # the dropped item's name (a folder, an alias/shortcut, or a file)
+    entries: list[str] = []  # top-level names inside a dropped folder
+    kind: str = "directory"  # "directory" | "file"
+
+
+class NativeDialogRequest(BaseModel):
+    start: Optional[str] = None
+    mode: str = "dir"  # "dir" | "file"
+    title: Optional[str] = None
+
+
+@app.post("/api/locate-folder")
+def locate_dropped_folder(req: LocateFolderRequest):
+    """Where does the folder someone dropped on the app live? (Browsers hide the path.)"""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="Nothing was dropped.")
+    kind = "file" if req.kind == "file" else "directory"
+    candidates = locate_folder(req.name, req.entries[:500], kind=kind, root=BROWSE_ROOT)
+    return {"name": normalize_dropped_name(req.name), "candidates": candidates}
+
+
+@app.post("/api/native-folder-dialog")
+def open_native_dialog(req: NativeDialogRequest):
+    """Show this machine's own folder/file chooser and return what was picked."""
+    if not native_dialog_available():
+        raise HTTPException(status_code=400, detail=(
+            "No system folder dialog is available on this machine — drop the folder onto "
+            "the field, use Browse…, or type the path."))
+    mode = "file" if req.mode == "file" else "dir"
+    try:
+        path = native_folder_dialog(
+            title=req.title or ("Choose a file" if mode == "file" else "Choose a folder"),
+            start=req.start, mode=mode,
+        )
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if path and not is_within_root(path, BROWSE_ROOT):
+        raise HTTPException(status_code=403, detail="Path is outside the allowed root.")
+    return {"path": path, "cancelled": path is None}
 
 
 # --------------------------------------------------------------------------- #

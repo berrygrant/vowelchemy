@@ -46,6 +46,7 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
     })
 
   const s = scan?.summary
+  const native = Boolean(ctx.status?.native_dialog)
   const detectedCsvs = detect?.vowel_csvs ?? []
   const scannedCsvs = scan?.existing_vowel_csvs ?? []
   const loadableCsvs = Array.from(new Set([...detectedCsvs, ...scannedCsvs]))
@@ -56,12 +57,20 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
       <p className="muted">
         Point Vowelchemy at your recordings and transcripts. Give a single <b>root folder</b> and
         let it find the sub-folders, or set each path yourself. Paths are on the machine running the
-        app (including mounted remote drives), and every field has a <b>Browse…</b> picker.
+        app (including mounted remote drives). Every field takes a folder <b>dropped</b> from
+        Finder / Explorer{native ? ', opens your system’s own folder chooser (📂 Choose…)' : ''}, or
+        has a <b>Browse…</b> picker.
       </p>
 
       <Card title="Auto-detect from a root folder">
         <Field label="Root / corpus folder" hint="we'll fuzzy-match the audio, transcript, and aligned sub-folders">
-          <PathInput value={rootDir} onChange={setRootDir} placeholder="/data/my_corpus" />
+          <PathInput
+            value={rootDir}
+            onChange={setRootDir}
+            placeholder="/data/my_corpus"
+            nativeDialog={native}
+            dropHint="Drag the corpus folder (or an alias to it) from Finder / Explorer and drop it here."
+          />
         </Field>
         <Button onClick={autodetect} busy={busy} disabled={!rootDir}>
           🪄 Auto-detect layout
@@ -81,16 +90,16 @@ export function CorpusStage({ ctx }: { ctx: Ctx }) {
       <Card title="Corpus paths">
         <div className="grid-2">
           <Field label="Audio folder (.wav)">
-            <PathInput value={audioDir} onChange={setAudioDir} placeholder="/data/my_corpus/audio" />
+            <PathInput value={audioDir} onChange={setAudioDir} placeholder="/data/my_corpus/audio" nativeDialog={native} />
           </Field>
           <Field label="Transcript folder" hint="blank = same as audio">
-            <PathInput value={transcriptDir} onChange={setTranscriptDir} />
+            <PathInput value={transcriptDir} onChange={setTranscriptDir} nativeDialog={native} />
           </Field>
           <Field label="Aligned TextGrid folder" hint="optional">
-            <PathInput value={alignedDir} onChange={setAlignedDir} />
+            <PathInput value={alignedDir} onChange={setAlignedDir} nativeDialog={native} />
           </Field>
           <Field label="Speaker demographics CSV" hint="optional">
-            <PathInput value={speakersPath} onChange={setSpeakersPath} mode="file" exts="csv,tsv" />
+            <PathInput value={speakersPath} onChange={setSpeakersPath} mode="file" exts="csv,tsv" nativeDialog={native} />
           </Field>
         </div>
         <Button primary onClick={doScan} busy={busy} disabled={!audioDir}>

@@ -1,0 +1,70 @@
+name: Release on version bump
+
+# Turns a version bump into a release, hands-free. When a commit on main
+# changes the declared version (what `python scripts/bump_version.py X.Y.Z`
+# writes), this workflow:
+#
+#   1. checks the four version declarations agree (fails loudly if the bump
+#      was done by hand in one file only);
+#   2. creates the tag vX.Y.Z on that commit, unless it already exists — a
+#      dependency edit in pyproject.toml, or a tag pushed by hand, changes
+#      nothing;
+#   3. runs "Build desktop app", which builds the macOS/Windows zips and
+#      publishes the GitHub release (with generated notes) that the in-app
+#      update check reads.
+#
+# Tags pushed with the workflow's own token do not trigger other workflows,
+# which is why step 3 *calls* the build workflow instead of relying on the
+# tag push to start it. See docs/RELEASING.md.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - pyproject.toml
+      - src/vowelchemy/__init__.py
+      - CITATION.cff
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    name: Tag the bumped version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      created: ${{ steps.version.outputs.created }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tags are needed to know whether this version is released
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Read the declared version and tag it if new
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(python scripts/bump_version.py --print)"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "v$version already exists — nothing to release."
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            git tag "v$version" "$GITHUB_SHA"
+            git push origin "v$version"
+            echo "Tagged v$version at $GITHUB_SHA."
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build and publish
+    needs: tag
+    if: needs.tag.outputs.created == 'true'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/build-app.yml
+    with:
+      tag: v${{ needs.tag.outputs.version }}

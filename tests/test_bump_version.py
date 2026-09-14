@@ -65,6 +65,14 @@ def test_cli_check_exit_codes(repo_copy, capsys):
     assert bv.main(["--check", "--root", str(repo_copy)]) == 0
     assert "agree" in capsys.readouterr().out
     assert bv.main(["9.9.9", "--root", str(repo_copy)]) == 0
-    assert "git tag v9.9.9" in capsys.readouterr().out
+    assert "Release on version bump" in capsys.readouterr().out
     assert bv.main(["--check", "v9.9.8", "--root", str(repo_copy)]) == 1
     assert "does not match" in capsys.readouterr().err
+    # --print is what the release action reads; it refuses to print a
+    # disagreeing set of declarations.
+    assert bv.main(["--print", "--root", str(repo_copy)]) == 0
+    assert capsys.readouterr().out.strip() == "9.9.9"
+    init = repo_copy / "src/vowelchemy/__init__.py"
+    init.write_text(init.read_text().replace("9.9.9", "9.9.8"))
+    assert bv.main(["--print", "--root", str(repo_copy)]) == 1
+    assert "disagree" in capsys.readouterr().err
